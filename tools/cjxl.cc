@@ -552,6 +552,11 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "1=true (default: true if lossy, false if lossless)",
                           &params.responsive, &ParseSigned, 1);
 
+  cmdline->AddOptionFlag(
+      '\0', "zero-tokens",
+      "[modular encoding] only MA tree",
+      &params.options.zero_tokens, &SetBooleanTrue, 2);
+
   cmdline->AddOptionFlag('V', "version", "Print version number and exit",
                          &version, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
