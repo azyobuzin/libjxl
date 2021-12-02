@@ -148,7 +148,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         *shared.metadata,
         ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
     JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
-                          *shared.metadata, /*constraints=*/nullptr));
+                          *shared.metadata, /*constraints=*/nullptr, /*frame_idx=*/0));
     // TODO(lode): shared.frame_header.dc_level should be equal to
     // dec_state.shared->frame_header.dc_level - 1 here, since above we set
     // dc_frame_info.dc_level = shared.frame_header.dc_level + 1, and

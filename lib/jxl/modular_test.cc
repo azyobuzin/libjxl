@@ -232,7 +232,7 @@ TEST(ModularTest, RoundtripExtraProperties) {
     BitReader reader(writer.GetSpan());
     BitReaderScopedCloser closer(&reader, &status);
     ASSERT_TRUE(ModularGenericDecompress(&reader, decoded, /*header=*/nullptr,
-                                         /*group_id=*/0, &options));
+                                         /*group_id=*/0, &options, /*rect=*/nullptr));
   }
   ASSERT_TRUE(status);
   ASSERT_EQ(image.channel.size(), decoded.channel.size());

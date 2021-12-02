@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -145,6 +146,7 @@ struct ANSCode {
   // Maximum number of bits necessary to represent the result of a
   // ReadHybridUint call done with this ANSCode.
   size_t max_num_bits = 0;
+  int sum_freq = 0;
   void UpdateMaxNumBits(size_t ctx, size_t symbol);
 };
 
@@ -158,7 +160,8 @@ class ANSSymbolReader {
             reinterpret_cast<AliasTable::Entry*>(code->alias_tables.get())),
         huffman_data_(code->huffman_data.data()),
         use_prefix_code_(code->use_prefix_code),
-        configs(code->uint_config.data()) {
+        configs(code->uint_config.data()),
+        sum_freq_(code->sum_freq) {
     if (!use_prefix_code_) {
       state_ = static_cast<uint32_t>(br->ReadFixedBits<32>());
       log_alpha_size_ = code->log_alpha_size;
@@ -186,7 +189,7 @@ class ANSSymbolReader {
     }
   }
 
-  JXL_INLINE size_t ReadSymbolANSWithoutRefill(const size_t histo_idx,
+  JXL_INLINE WithEntropy<size_t> ReadSymbolANSWithoutRefill(const size_t histo_idx,
                                                BitReader* JXL_RESTRICT br) {
     const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
 
@@ -212,15 +215,17 @@ class ANSSymbolReader {
     const uint32_t next_res = state_ & (ANS_TAB_SIZE - 1u);
     AliasTable::Prefetch(table, next_res, log_entry_size_);
 
-    return symbol.value;
+    double entropy = -std::log2(static_cast<double>(symbol.freq) / sum_freq_);
+    JXL_ASSERT(entropy > 0);
+    return {symbol.value, entropy};
   }
 
-  JXL_INLINE size_t ReadSymbolHuffWithoutRefill(const size_t histo_idx,
+  JXL_INLINE WithEntropy<size_t> ReadSymbolHuffWithoutRefill(const size_t histo_idx,
                                                 BitReader* JXL_RESTRICT br) {
-    return huffman_data_[histo_idx].ReadSymbol(br);
+    return huffman_data_[histo_idx].ReadSymbol(br).cast<size_t>();
   }
 
-  JXL_INLINE size_t ReadSymbolWithoutRefill(const size_t histo_idx,
+  JXL_INLINE WithEntropy<size_t> ReadSymbolWithoutRefill(const size_t histo_idx,
                                             BitReader* JXL_RESTRICT br) {
     // TODO(veluca): hoist if in hotter loops.
     if (JXL_UNLIKELY(use_prefix_code_)) {
@@ -229,23 +234,27 @@ class ANSSymbolReader {
     return ReadSymbolANSWithoutRefill(histo_idx, br);
   }
 
-  JXL_INLINE size_t ReadSymbol(const size_t histo_idx,
-                               BitReader* JXL_RESTRICT br) {
+  WithEntropy<size_t> ReadSymbolWithEntropy(const size_t histo_idx, BitReader* JXL_RESTRICT br) {
     br->Refill();
     return ReadSymbolWithoutRefill(histo_idx, br);
+  }
+
+  JXL_INLINE size_t ReadSymbol(const size_t histo_idx,
+                               BitReader* JXL_RESTRICT br) {
+    return ReadSymbolWithEntropy(histo_idx, br).value;
   }
 
   bool CheckANSFinalState() { return state_ == (ANS_SIGNATURE << 16u); }
 
   template <typename BitReader>
-  static JXL_INLINE uint32_t ReadHybridUintConfig(
+  static WithEntropy<uint32_t> ReadHybridUintConfigWithEntropy(
       const HybridUintConfig& config, size_t token, BitReader* br) {
     size_t split_token = config.split_token;
     size_t msb_in_token = config.msb_in_token;
     size_t lsb_in_token = config.lsb_in_token;
     size_t split_exponent = config.split_exponent;
     // Fast-track version of hybrid integer decoding.
-    if (token < split_token) return token;
+    if (token < split_token) return {static_cast<uint32_t>(token), 0};
     uint32_t nbits = split_exponent - (msb_in_token + lsb_in_token) +
                      ((token - split_token) >> (msb_in_token + lsb_in_token));
     // Max amount of bits for ReadBits is 32 and max valid left shift is 29
@@ -268,27 +277,33 @@ class ANSSymbolReader {
                  low;
     // TODO(eustas): mark BitReader as unhealthy if nbits > 29 or ret does not
     //               fit uint32_t
-    return static_cast<uint32_t>(ret);
+    return {static_cast<uint32_t>(ret), static_cast<double>(nbits)};
   }
 
-  // Takes a *clustered* idx.
-  size_t ReadHybridUintClustered(size_t ctx, BitReader* JXL_RESTRICT br) {
+  template <typename BitReader>
+  static JXL_INLINE uint32_t ReadHybridUintConfig(
+      const HybridUintConfig& config, size_t token, BitReader* br) {
+    return ReadHybridUintConfigWithEntropy(config, token, br).value;
+  }
+
+  WithEntropy<size_t> ReadHybridUintClusteredWithEntropy(size_t ctx, BitReader* JXL_RESTRICT br) {
     if (JXL_UNLIKELY(num_to_copy_ > 0)) {
       size_t ret = lz77_window_[(copy_pos_++) & kWindowMask];
       num_to_copy_--;
       lz77_window_[(num_decoded_++) & kWindowMask] = ret;
-      return ret;
+      return {ret, normalized_entropy_};
     }
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
-    size_t token = ReadSymbolWithoutRefill(ctx, br);
+    double entropy = 0;
+    size_t token = ReadSymbolWithoutRefill(ctx, br).add_to(entropy);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
       num_to_copy_ =
-          ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
+          ReadHybridUintConfigWithEntropy(lz77_length_uint_, token - lz77_threshold_, br).add_to(entropy) +
           lz77_min_length_;
       br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
       // Distance code.
-      size_t token = ReadSymbolWithoutRefill(lz77_ctx_, br);
-      size_t distance = ReadHybridUintConfig(configs[lz77_ctx_], token, br);
+      size_t token = ReadSymbolWithoutRefill(lz77_ctx_, br).add_to(entropy);
+      size_t distance = ReadHybridUintConfigWithEntropy(configs[lz77_ctx_], token, br).add_to(entropy);
       if (JXL_LIKELY(distance < num_special_distances_)) {
         distance = special_distances_[distance];
       } else {
@@ -308,12 +323,19 @@ class ANSSymbolReader {
         memset(lz77_window_, 0, to_fill * sizeof(lz77_window_[0]));
       }
       // TODO(eustas): overflow; mark BitReader as unhealthy
-      if (num_to_copy_ < lz77_min_length_) return 0;
-      return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
+      if (num_to_copy_ < lz77_min_length_) return {0, entropy};
+      // RLEは各画素が同じだけ負担するものとする
+      normalized_entropy_ = entropy / num_to_copy_;
+      return ReadHybridUintClusteredWithEntropy(ctx, br);  // will trigger a copy.
     }
-    size_t ret = ReadHybridUintConfig(configs[ctx], token, br);
+    size_t ret = ReadHybridUintConfigWithEntropy(configs[ctx], token, br).add_to(entropy);
     if (lz77_window_) lz77_window_[(num_decoded_++) & kWindowMask] = ret;
-    return ret;
+    return {ret, entropy};
+  }
+
+  // Takes a *clustered* idx.
+  size_t ReadHybridUintClustered(size_t ctx, BitReader* JXL_RESTRICT br) {
+    return ReadHybridUintClusteredWithEntropy(ctx, br).value;
   }
 
   JXL_INLINE size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
@@ -402,6 +424,7 @@ class ANSSymbolReader {
   uint32_t log_alpha_size_;
   uint32_t log_entry_size_;
   uint32_t entry_size_minus_1_;
+  int sum_freq_;
 
   // LZ77 structures and constants.
   static constexpr size_t kWindowMask = kWindowSize - 1;
@@ -416,6 +439,7 @@ class ANSSymbolReader {
   HybridUintConfig lz77_length_uint_;
   uint32_t special_distances_[kNumSpecialDistances];
   uint32_t num_special_distances_;
+  double normalized_entropy_ = 0;
 };
 
 Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,

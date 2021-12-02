@@ -216,9 +216,10 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
   options.group_dim = frame_dim.group_dim;
+  DecodingRect dr = {"DecodeGlobalInfo", frame_idx, 0, 0};
   Status dec_status = ModularGenericDecompress(
       reader, gi, &global_header, ModularStreamId::Global().ID(frame_dim),
-      &options,
+      &options, &dr,
       /*undo_transforms=*/false, &tree, &code, &context_map,
       allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
@@ -301,8 +302,9 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   if (gi.channel.empty()) return true;
   ModularOptions options;
   if (!zerofill) {
+    DecodingRect dr = {"DecodeGroup", frame_idx, rect.x0(), rect.y0()};
     if (!ModularGenericDecompress(
-            reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
+            reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options, &dr,
             /*undo_transforms=*/true, &tree, &code, &context_map)) {
       return JXL_FAILURE("Failed to decode modular group");
     }
@@ -354,8 +356,9 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
     ch.h >>= dec_state->shared->frame_header.chroma_subsampling.VShift(c);
     ch.shrink();
   }
+  DecodingRect dr = {"DecodeVarDCTDC", frame_idx, r.x0(), r.y0()};
   if (!ModularGenericDecompress(
-          reader, image, /*header=*/nullptr, stream_id, &options,
+          reader, image, /*header=*/nullptr, stream_id, &options, &dr,
           /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode modular DC group");
   }
@@ -383,8 +386,9 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   image.channel[1] = Channel(cr.xsize(), cr.ysize(), 3, 3);
   image.channel[2] = Channel(count, 2, 0, 0);
   ModularOptions options;
+  DecodingRect dr = {"DecodeAcMetadata", frame_idx, r.x0(), r.y0()};
   if (!ModularGenericDecompress(
-          reader, image, /*header=*/nullptr, stream_id, &options,
+          reader, image, /*header=*/nullptr, stream_id, &options, &dr,
           /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode AC metadata");
   }
@@ -632,15 +636,16 @@ Status ModularFrameDecoder::DecodeQuantTable(
   }
   Image image(required_size_x, required_size_y, 8, 3);
   ModularOptions options;
+  DecodingRect dr = {"DecodeQuantTable", 0, 0, 0};
   if (modular_frame_decoder) {
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(
         br, image, /*header=*/nullptr,
         ModularStreamId::QuantTable(idx).ID(modular_frame_decoder->frame_dim),
-        &options, /*undo_transforms=*/true, &modular_frame_decoder->tree,
+        &options, &dr, /*undo_transforms=*/true, &modular_frame_decoder->tree,
         &modular_frame_decoder->code, &modular_frame_decoder->context_map));
   } else {
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(br, image, /*header=*/nullptr,
-                                                 0, &options,
+                                                 0, &options, &dr,
                                                  /*undo_transforms=*/true));
   }
   if (!encoding->qraw.qtable) {

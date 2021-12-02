@@ -113,6 +113,8 @@ class ModularFrameDecoder {
   bool have_dc() const { return have_something; }
   void MaybeDropFullImage();
 
+  size_t frame_idx = 0;
+
  private:
   Status ModularImageToDecodedRect(Image& gi, PassesDecoderState* dec_state,
                                    jxl::ThreadPool* pool, ImageBundle* output,

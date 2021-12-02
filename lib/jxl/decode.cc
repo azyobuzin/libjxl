@@ -1177,6 +1177,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       if (!DecodeFrame(dparams, &preview_dec_state, dec->thread_pool.get(),
                        reader.get(), &ib, dec->metadata,
                        /*constraints=*/nullptr,
+                       /*frame_idx=*/0,
                        /*is_preview=*/true)) {
         return JXL_API_ERROR("decoding preview failed");
       }
@@ -1326,7 +1327,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       jxl::Status status = dec->frame_dec->InitFrame(
           reader.get(), dec->ib.get(), /*is_preview=*/false,
           /*allow_partial_frames=*/true, /*allow_partial_dc_global=*/false,
-          /*output_needed=*/dec->events_wanted & JXL_DEC_FULL_IMAGE);
+          /*output_needed=*/dec->events_wanted & JXL_DEC_FULL_IMAGE, /*frame_idx=*/0);
       if (!status) JXL_API_RETURN_IF_ERROR(status);
 
       size_t sections_begin =

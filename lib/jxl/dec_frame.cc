@@ -140,7 +140,7 @@ Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
                    const CodecMetadata& metadata,
-                   const SizeConstraints* constraints, bool is_preview) {
+                   const SizeConstraints* constraints, size_t frame_idx, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
   FrameDecoder frame_decoder(dec_state, metadata, pool);
@@ -150,7 +150,7 @@ Status DecodeFrame(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(
       reader, decoded, is_preview, dparams.allow_partial_files,
       dparams.allow_partial_files && dparams.allow_more_progressive_steps,
-      true));
+      true, frame_idx));
 
   // Handling of progressive decoding.
   {
@@ -237,7 +237,7 @@ Status DecodeFrame(const DecompressParams& dparams,
 Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                                bool is_preview, bool allow_partial_frames,
                                bool allow_partial_dc_global,
-                               bool output_needed) {
+                               bool output_needed, size_t frame_idx) {
   PROFILER_FUNC;
   decoded_ = decoded;
   JXL_ASSERT(is_finalized_);
@@ -295,6 +295,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
       InitializePassesSharedState(frame_header_, &dec_state_->shared_storage));
   JXL_RETURN_IF_ERROR(dec_state_->Init());
   modular_frame_decoder_.Init(frame_dim_);
+  modular_frame_decoder_.frame_idx = frame_idx;
 
   if (decoded->IsJPEG()) {
     if (frame_header_.encoding == FrameEncoding::kModular) {

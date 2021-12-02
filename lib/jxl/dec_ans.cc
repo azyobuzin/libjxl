@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <numeric>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
@@ -241,6 +242,7 @@ Status DecodeANSCodes(const size_t num_histograms,
       while (!counts.empty() && counts.back() == 0) {
         counts.pop_back();
       }
+      result->sum_freq += std::accumulate(counts.cbegin(), counts.cend(), 0);
       for (size_t s = 0; s < counts.size(); s++) {
         if (counts[s] != 0) {
           result->UpdateMaxNumBits(c, s);

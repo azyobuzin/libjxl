@@ -237,7 +237,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
 }
 
 // Decodes the next Huffman coded symbol from the bit-stream.
-uint16_t HuffmanDecodingData::ReadSymbol(BitReader* br) const {
+WithEntropy<uint16_t> HuffmanDecodingData::ReadSymbol(BitReader* br) const {
   size_t n_bits;
   const HuffmanCode* table = table_.data();
   table += br->PeekBits(kHuffmanTableBits);
@@ -249,7 +249,7 @@ uint16_t HuffmanDecodingData::ReadSymbol(BitReader* br) const {
     table += br->PeekBits(n_bits);
   }
   br->Consume(table->bits);
-  return table->value;
+  return {table->value, table->bits};
 }
 
 }  // namespace jxl

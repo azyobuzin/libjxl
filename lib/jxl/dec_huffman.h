@@ -14,6 +14,24 @@
 
 namespace jxl {
 
+template <typename Value> struct WithEntropy {
+  Value value;
+  double entropy;
+
+  template <typename T> WithEntropy<T> cast() const noexcept {
+    return {static_cast<T>(value), entropy};
+  }
+
+  Value add_to(double &dst_entropy) noexcept {
+    dst_entropy += entropy;
+    return value;
+  }
+
+  WithEntropy<Value> add(double in_entropy) const noexcept {
+    return {value, entropy + in_entropy};
+  }
+};
+
 static constexpr size_t kHuffmanTableBits = 8u;
 
 struct HuffmanDecodingData {
@@ -22,7 +40,7 @@ struct HuffmanDecodingData {
   // Returns false if the Huffman code lengths can not de decoded.
   bool ReadFromBitStream(size_t alphabet_size, BitReader* br);
 
-  uint16_t ReadSymbol(BitReader* br) const;
+  WithEntropy<uint16_t> ReadSymbol(BitReader* br) const;
 
   std::vector<HuffmanCode> table_;
 };

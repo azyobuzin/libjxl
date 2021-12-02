@@ -68,6 +68,7 @@ Status DecodePreview(const DecompressParams& dparams,
       metadata, ColorEncoding::LinearSRGB(metadata.m.color_encoding.IsGray())));
   JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, preview,
                                   metadata, constraints,
+                                  /*frame_idx=*/0,
                                   /*is_preview=*/true));
   if (dec_pixels) {
     *dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
@@ -141,6 +142,7 @@ Status DecodeFile(const DecompressParams& dparams,
 
     io->frames.clear();
     Status dec_ok(false);
+    size_t frame_idx = 0;
     do {
       io->frames.emplace_back(&io->metadata.m);
       if (jpeg_data) {
@@ -149,9 +151,10 @@ Status DecodeFile(const DecompressParams& dparams,
       // Skip frames that are not displayed.
       bool found_displayed_frame = true;
       do {
+        frame_idx++;
         dec_ok =
             DecodeFrame(dparams, &dec_state, pool, &reader, &io->frames.back(),
-                        io->metadata, &io->constraints);
+                        io->metadata, &io->constraints, frame_idx);
         if (!dparams.allow_partial_files) {
           JXL_RETURN_IF_ERROR(dec_ok);
         } else if (!dec_ok) {

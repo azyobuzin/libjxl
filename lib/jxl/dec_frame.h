@@ -42,7 +42,9 @@ Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
                    const CodecMetadata& metadata,
-                   const SizeConstraints* constraints, bool is_preview = false);
+                   const SizeConstraints* constraints,
+                   size_t frame_idx,
+                   bool is_preview = false);
 
 // Leaves reader in the same state as DecodeFrame would. Used to skip preview.
 // Also updates `dec_state` with the new frame header.
@@ -71,7 +73,7 @@ class FrameDecoder {
   // on callers.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                    bool is_preview, bool allow_partial_frames,
-                   bool allow_partial_dc_global, bool output_needed);
+                   bool allow_partial_dc_global, bool output_needed, size_t frame_idx);
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;

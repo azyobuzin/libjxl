@@ -122,9 +122,17 @@ bool TreeToLookupTable(const FlatTree &tree,
 Status ValidateChannelDimensions(const Image &image,
                                  const ModularOptions &options);
 
+struct DecodingRect {
+  const char *where;
+  size_t frame_idx;
+  size_t xbegin;
+  size_t ybegin;
+};
+
 Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
                                 ModularOptions *options,
+                                const DecodingRect *rect,
                                 bool undo_transforms = true,
                                 const Tree *tree = nullptr,
                                 const ANSCode *code = nullptr,
