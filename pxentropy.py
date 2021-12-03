@@ -74,6 +74,7 @@ with TemporaryDirectory() as temp_dir:
             print(
                 f"p={key[0]} fr={key[1]}\tmin={result.min():.2f} max={result.max():.2f}bit avg={np.average(result):.2f}bit {methods}"
             )
+            print(">=18bit\t", np.count_nonzero(result >= 18))
 
             result = (255 / 30 * result).astype(np.uint8)
             cv2.imwrite(dst_path, result)
