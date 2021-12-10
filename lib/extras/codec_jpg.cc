@@ -27,6 +27,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -301,22 +302,23 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (cinfo.arith_code) {
       return failure("arithmetic code JPEGs are not supported");
     }
+    int nbcomp = cinfo.num_components;
+    if (nbcomp != 1 && nbcomp != 3) {
+      return failure("unsupported number of components in JPEG");
+    }
     if (!ReadICCProfile(&cinfo, &ppf->icc)) {
       ppf->icc.clear();
       // Default to SRGB
-      ppf->color_encoding.color_space = cinfo.output_components == 1
-                                            ? JXL_COLOR_SPACE_GRAY
-                                            : JXL_COLOR_SPACE_RGB;
+      // Actually, (cinfo.output_components == nbcomp) will be checked after
+      // `jpeg_start_decompress`.
+      ppf->color_encoding.color_space =
+          (nbcomp == 1) ? JXL_COLOR_SPACE_GRAY : JXL_COLOR_SPACE_RGB;
       ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
       ppf->color_encoding.primaries = JXL_PRIMARIES_SRGB;
       ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
       ppf->color_encoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
     }
     ReadExif(&cinfo, &ppf->metadata.exif);
-    int nbcomp = cinfo.num_components;
-    if (nbcomp != 1 && nbcomp != 3) {
-      return failure("unsupported number of components in JPEG");
-    }
     if (!ApplyColorHints(color_hints, /*color_already_set=*/true,
                          /*is_gray=*/false, ppf)) {
       return failure("ApplyColorHints failed");
@@ -506,8 +508,9 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   const ImageBundle* ib;
   ImageMetadata metadata = io->metadata.m;
   ImageBundle ib_store(&metadata);
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(
-      io->Main(), io->metadata.m.color_encoding, pool, &ib_store, &ib));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(io->Main(),
+                                        io->metadata.m.color_encoding,
+                                        GetJxlCms(), pool, &ib_store, &ib));
 
   switch (encoder) {
     case JpegEncoder::kLibJpeg:

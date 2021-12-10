@@ -17,7 +17,7 @@ on:
 jobs:
   ubuntu_build:
     name: Ubuntu Build ${{ matrix.name }}
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
@@ -34,7 +34,7 @@ jobs:
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
-            env_test_stack_size: 2048
+            env_test_stack_size: 4000
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -65,6 +65,16 @@ jobs:
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
+          # Builds with clang-5 in release mode
+          - name: release:clang-5
+            os: ubuntu-18.04
+            mode: release
+            # TODO(eustas): investigate, why static brotli library is not found.
+            skip_install: true
+            apt_pkgs: clang-5.0
+            cmake_args: >-
+              -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
+              -DJPEGXL_ENABLE_PLUGINS=OFF
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -81,6 +91,8 @@ jobs:
           clang-7 \
           cmake \
           doxygen \
+          libbenchmark-dev \
+          libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
@@ -146,7 +158,9 @@ jobs:
           cjxl djxl libjxl.so libjxl_dec.so
     # Check that we can build the example project against the installed libs.
     - name: Install and build examples
-      if: matrix.mode == 'release' || matrix.name == 'release'
+      if: |
+        (matrix.mode == 'release' || matrix.name == 'release') &&
+        !matrix.skip_install
       run: |
         set -x
         sudo cmake --build build -- install
@@ -197,6 +211,15 @@ jobs:
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
+    # Run gbench once, just to make sure it runs, not for actual benchmarking.
+    # This doesn't work on msan because we use gbench library from the system
+    # which is not instrumented by msan.
+    - name: gbench check
+      if: |
+        matrix.name == 'release' || (
+          github.event_name == 'push' && matrix.name != 'msan')
+      run: |
+        ./ci.sh gbench --benchmark_min_time=0
 
 
   cross_compile_ubuntu:
@@ -295,8 +318,8 @@ jobs:
           libgtk2.0-dev
 
           # QT
-          libqt5x11extras5-dev:${{ matrix.arch }}
-          qtbase5-dev:${{ matrix.arch }}
+          libqt5x11extras5-dev
+          qtbase5-dev
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
@@ -415,6 +438,7 @@ jobs:
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
     runs-on: ubuntu-latest
+    if: false
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       EM_VERSION: 2.0.23

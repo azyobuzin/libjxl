@@ -710,8 +710,8 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
 
 Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
-    const ImageBundle* original_pixels, Image3F* opsin, ThreadPool* pool,
-    AuxOut* aux_out) {
+    const ImageBundle* original_pixels, Image3F* opsin,
+    const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out) {
   PROFILER_ZONE("JxlLossyFrameHeuristics uninstrumented");
 
   CompressParams& cparams = enc_state->cparams;
@@ -720,10 +720,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   // Compute parameters for noise synthesis.
   if (shared.frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("enc GetNoiseParam");
-    if (cparams.photon_noise_iso > 0) {
-      shared.image_features.noise_params = SimulatePhotonNoise(
-          opsin->xsize(), opsin->ysize(), cparams.photon_noise_iso);
-    } else {
+    if (cparams.photon_noise_iso == 0) {
       // Don't start at zero amplitude since adding noise is expensive -- it
       // significantly slows down decoding, and this is unlikely to
       // completely go away even with advanced optimizations. After the
@@ -793,7 +790,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   // Find and subtract patches/dots.
   if (ApplyOverride(cparams.patches,
                     cparams.speed_tier <= SpeedTier::kSquirrel)) {
-    FindBestPatchDictionary(*opsin, enc_state, pool, aux_out);
+    FindBestPatchDictionary(*opsin, enc_state, cms, pool, aux_out);
     PatchDictionaryEncoder::SubtractFrom(shared.image_features.patches, opsin);
   }
 
@@ -833,7 +830,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     *opsin = Image3F(RoundUpToBlockDim(original_pixels->xsize()),
                      RoundUpToBlockDim(original_pixels->ysize()));
     opsin->ShrinkTo(original_pixels->xsize(), original_pixels->ysize());
-    ToXYB(*original_pixels, pool, opsin, /*linear=*/nullptr);
+    ToXYB(*original_pixels, pool, opsin, cms, /*linear=*/nullptr);
     PadImageToBlockMultipleInPlace(opsin);
   }
 
@@ -938,7 +935,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
                           &enc_state->shared.matrices);
 
   // Refine quantization levels.
-  FindBestQuantizer(original_pixels, *opsin, enc_state, pool, aux_out);
+  FindBestQuantizer(original_pixels, *opsin, enc_state, cms, pool, aux_out);
 
   // Choose a context model that depends on the amount of quantization for AC.
   if (cparams.speed_tier < SpeedTier::kFalcon) {

@@ -49,6 +49,7 @@
 #include "lib/jxl/enc_noise.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
+#include "lib/jxl/enc_photon_noise.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/enc_toc.h"
@@ -302,8 +303,9 @@ Status MakeFrameHeader(const CompressParams& cparams,
   }
 
   frame_header->flags = FrameFlagsFromParams(cparams);
-  // Noise is not supported in the Modular encoder for now.
-  if (frame_header->encoding != FrameEncoding::kVarDCT) {
+  // Non-photon noise is not supported in the Modular encoder for now.
+  if (frame_header->encoding != FrameEncoding::kVarDCT &&
+      cparams.photon_noise_iso == 0) {
     frame_header->UpdateFlag(false, FrameHeader::Flags::kNoise);
   }
 
@@ -332,6 +334,15 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->frame_origin = ib.origin;
     size_t ups = 1;
     if (cparams.already_downsampled) ups = cparams.resampling;
+
+    // TODO(lode): this is not correct in case of odd original image sizes in
+    // combination with cparams.already_downsampled. Likely these values should
+    // be set to respectively frame_header->default_xsize() and
+    // frame_header->default_ysize() instead, the original (non downsampled)
+    // intended decoded image dimensions. But it may be more subtle than that
+    // if combined with crop. This issue causes custom_size_or_origin to be
+    // incorrectly set to true in case of already_downsampled with odd output
+    // image size when no cropping is used.
     frame_header->frame_size.xsize = ib.xsize() * ups;
     frame_header->frame_size.ysize = ib.ysize() * ups;
     if (ib.origin.x0 != 0 || ib.origin.y0 != 0 ||
@@ -382,8 +393,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   }
 
   frame_header->animation_frame.duration = ib.duration;
-
-  // TODO(veluca): timecode.
+  frame_header->animation_frame.timecode = ib.timecode;
 
   return true;
 }
@@ -466,8 +476,9 @@ class LossyFrameEncoder {
   LossyFrameEncoder(const CompressParams& cparams,
                     const FrameHeader& frame_header,
                     PassesEncoderState* JXL_RESTRICT enc_state,
-                    ThreadPool* pool, AuxOut* aux_out)
-      : enc_state_(enc_state), pool_(pool), aux_out_(aux_out) {
+                    const JxlCmsInterface& cms, ThreadPool* pool,
+                    AuxOut* aux_out)
+      : enc_state_(enc_state), cms_(cms), pool_(pool), aux_out_(aux_out) {
     JXL_CHECK(InitializePassesSharedState(frame_header, &enc_state_->shared,
                                           /*encoder=*/true));
     enc_state_->cparams = cparams;
@@ -475,7 +486,8 @@ class LossyFrameEncoder {
   }
 
   Status ComputeEncodingData(const ImageBundle* linear,
-                             Image3F* JXL_RESTRICT opsin, ThreadPool* pool,
+                             Image3F* JXL_RESTRICT opsin,
+                             const JxlCmsInterface& cms, ThreadPool* pool,
                              ModularFrameEncoder* modular_frame_encoder,
                              BitWriter* JXL_RESTRICT writer,
                              FrameHeader* frame_header) {
@@ -495,10 +507,11 @@ class LossyFrameEncoder {
     }
 
     JXL_RETURN_IF_ERROR(enc_state_->heuristics->LossyFrameHeuristics(
-        enc_state_, modular_frame_encoder, linear, opsin, pool_, aux_out_));
+        enc_state_, modular_frame_encoder, linear, opsin, cms_, pool_,
+        aux_out_));
 
-    InitializePassesEncoder(*opsin, pool_, enc_state_, modular_frame_encoder,
-                            aux_out_);
+    InitializePassesEncoder(*opsin, cms, pool_, enc_state_,
+                            modular_frame_encoder, aux_out_);
 
     enc_state_->passes.resize(enc_state_->progressive_splitter.GetNumPasses());
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
@@ -1001,6 +1014,7 @@ class LossyFrameEncoder {
   }
 
   PassesEncoderState* JXL_RESTRICT enc_state_;
+  JxlCmsInterface cms_;
   ThreadPool* pool_;
   AuxOut* aux_out_;
   std::vector<EncCache> group_caches_;
@@ -1010,7 +1024,8 @@ class LossyFrameEncoder {
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
-                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
+                   const JxlCmsInterface& cms, ThreadPool* pool,
+                   BitWriter* writer, AuxOut* aux_out) {
   ib.VerifyMetadata();
 
   passes_enc_state->special_frames.clear();
@@ -1126,7 +1141,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   };
 
   LossyFrameEncoder lossy_frame_encoder(cparams, *frame_header,
-                                        passes_enc_state, pool, aux_out);
+                                        passes_enc_state, cms, pool, aux_out);
   std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
       jxl::make_unique<ModularFrameEncoder>(*frame_header, cparams);
 
@@ -1158,7 +1173,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       // linear sRGB avoids a color conversion there). Otherwise, don't
       // fill it to reduce memory usage.
       ib_or_linear =
-          ToXYB(ib, pool, &opsin, want_linear ? &linear_storage : nullptr);
+          ToXYB(ib, pool, &opsin, cms, want_linear ? &linear_storage : nullptr);
     } else {  // RGB or YCbCr: don't do anything (forward YCbCr is not
               // implemented, this is only used when the input is already in
               // YCbCr)
@@ -1186,7 +1201,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     if (frame_header->encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-          ib_or_linear, &opsin, pool, modular_frame_encoder.get(), writer,
+          ib_or_linear, &opsin, cms, pool, modular_frame_encoder.get(), writer,
           frame_header.get()));
     } else if (frame_header->upsampling != 1 && !cparams.already_downsampled) {
       // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
@@ -1195,7 +1210,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   } else {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-        &ib, &opsin, pool, modular_frame_encoder.get(), writer,
+        &ib, &opsin, cms, pool, modular_frame_encoder.get(), writer,
         frame_header.get()));
   }
   if (cparams.ec_resampling != 1 && !cparams.already_downsampled) {
@@ -1208,7 +1223,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
   JXL_RETURN_IF_ERROR(modular_frame_encoder->ComputeEncodingData(
       *frame_header, *ib.metadata(), &opsin, *extra_channels,
-      lossy_frame_encoder.State(), pool, aux_out,
+      lossy_frame_encoder.State(), cms, pool, aux_out,
       /* do_color=*/frame_header->encoding == FrameEncoding::kModular));
 
   writer->AppendByteAligned(lossy_frame_encoder.State()->special_frames);
@@ -1250,6 +1265,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                   get_output(0), kLayerSplines, HistogramParams(), aux_out);
   }
 
+  if (cparams.photon_noise_iso > 0) {
+    lossy_frame_encoder.State()->shared.image_features.noise_params =
+        SimulatePhotonNoise(ib.xsize(), ib.ysize(), cparams.photon_noise_iso);
+  }
   if (frame_header->flags & FrameHeader::kNoise) {
     EncodeNoise(lossy_frame_encoder.State()->shared.image_features.noise_params,
                 get_output(0), kLayerNoise, aux_out);

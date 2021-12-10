@@ -21,9 +21,6 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 
-// Unpublised API.
-void SetDecoderMemoryLimitBase_(size_t memory_limit_base);
-
 namespace {
 
 // Externally visible value to ensure pixels are used in the fuzzer.
@@ -71,7 +68,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
-  SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
@@ -107,6 +103,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   if (!spec.use_streaming) {
     // Set all input at once
     JxlDecoderSetInput(dec.get(), jxl, size);
+    JxlDecoderCloseInput(dec.get());
   }
 
   bool seen_basic_info = false;
@@ -193,7 +190,14 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           return false;
         }
         streaming_size += add_size;
-        JxlDecoderSetInput(dec.get(), jxl, streaming_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetInput(dec.get(), jxl, streaming_size)) {
+          return false;
+        }
+        if (leftover == streaming_size) {
+          // All possible input bytes given
+          JxlDecoderCloseInput(dec.get());
+        }
 
         if (!tested_flush && seen_frame) {
           // Test flush max once to avoid too slow fuzzer run

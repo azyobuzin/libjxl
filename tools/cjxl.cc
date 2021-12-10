@@ -32,6 +32,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/frame_header.h"
@@ -40,7 +41,6 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
-#include "tools/cpu/cpu.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -272,20 +272,20 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
 void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
   cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                               "the input can be PNG"
+                               "the input can be "
 #if JPEGXL_ENABLE_APNG
-                               ", APNG"
+                               "PNG, APNG, "
 #endif
 #if JPEGXL_ENABLE_GIF
-                               ", GIF"
+                               "GIF, "
 #endif
 #if JPEGXL_ENABLE_JPEG
-                               ", JPEG"
+                               "JPEG, "
 #endif
 #if JPEGXL_ENABLE_EXR
-                               ", EXR"
+                               "EXR, "
 #endif
-                               ", PPM, PFM, or PGX",
+                               "PPM, PFM, or PGX",
                                &file_in);
   cmdline->AddPositionalOption(
       "OUTPUT", /* required = */ true,
@@ -404,9 +404,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.force_cfl_jpeg_recompression, &SetBooleanFalse,
                          2);
 
-  opt_num_threads_id = cmdline->AddOptionValue(
-      '\0', "num_threads", "N", "number of worker threads (zero = none).",
-      &num_threads, &ParseUnsigned, 1);
+  cmdline->AddOptionValue('\0', "num_threads", "N",
+                          "number of worker threads (zero = none).",
+                          &num_threads, &ParseUnsigned, 1);
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
                           &num_reps, &ParseUnsigned, 1);
 
@@ -696,21 +696,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     return false;
   }
 
-  // User didn't override num_threads, so we have to compute a default, which
-  // might fail, so only do so when necessary. Don't just check num_threads != 0
-  // because the user may have set it to that.
-  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    cpu::ProcessorTopology topology;
-    if (!cpu::DetectProcessorTopology(&topology)) {
-      // We have seen sporadic failures caused by setaffinity_np.
-      fprintf(stderr,
-              "Failed to choose default num_threads; you can avoid this "
-              "error by specifying a --num_threads N argument.\n");
-      return false;
-    }
-    num_threads = topology.packages * topology.cores_per_package;
-  }
-
   return true;
 }
 
@@ -753,7 +738,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
   const double t0 = jxl::Now();
 
-  io->target_nits = args.intensity_target;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
   jxl::Codec input_codec;
@@ -761,6 +745,9 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                    &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
+  }
+  if (args.intensity_target != 0) {
+    io->metadata.m.SetIntensityTarget(args.intensity_target);
   }
   if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
   if (args.jpeg_transcode) args.params.butteraugli_distance = 0;
@@ -833,7 +820,7 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
       args.params.color_transform = io.Main().color_transform;
     }
     ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                    &aux_out, pool);
+                    jxl::GetJxlCms(), &aux_out, pool);
     if (!ok) {
       fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));
       return false;

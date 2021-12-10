@@ -19,6 +19,7 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
@@ -106,7 +107,6 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
 
   CodecInOut io2;
   ColorHints color_hints;
-  io2.target_nits = io.metadata.m.IntensityTarget();
   // Only for PNM because PNG will warn about ignoring them.
   if (codec == Codec::kPNM) {
     color_hints.Add("color_space", Description(c_external));
@@ -128,7 +128,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
     EXPECT_TRUE(SamePixels(ib1.alpha(), *ib2.alpha()));
   }
 
-  JXL_CHECK(ib2.TransformTo(ib1.c_current(), pool));
+  JXL_CHECK(ib2.TransformTo(ib1.c_current(), GetJxlCms(), pool));
 
   double max_l1, max_rel;
   // Round-trip tolerances must be higher than in external_image_test because

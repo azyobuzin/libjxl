@@ -80,7 +80,7 @@ bool SamePixels(const Image3<T>& image1, const Image3<T>& image2) {
 }
 
 // Use for floating-point images with fairly large numbers; tolerates small
-// absolute errors and/or small relative errors. Returns max_relative.
+// absolute errors and/or small relative errors.
 template <typename T>
 void VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
                          const double threshold_l1,
@@ -231,7 +231,7 @@ typename std::enable_if<std::is_integral<T>::value>::type RandomFillImage(
                 int64_t(std::numeric_limits<T>::max()) + 1);
 }
 
-void RandomFillImage(Plane<float>* image) {
+JXL_INLINE void RandomFillImage(Plane<float>* image) {
   Rng rng(129);
   GenerateImage(rng, image, 0.0f, std::numeric_limits<float>::max());
 }
@@ -251,7 +251,7 @@ typename std::enable_if<std::is_integral<T>::value>::type RandomFillImage(
                 int64_t(std::numeric_limits<T>::max()) + 1);
 }
 
-void RandomFillImage(Image3F* image) {
+JXL_INLINE void RandomFillImage(Image3F* image) {
   Rng rng(129);
   GenerateImage(rng, image, 0.0f, std::numeric_limits<float>::max());
 }

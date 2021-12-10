@@ -15,6 +15,7 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -33,28 +34,6 @@ using ExrInt64 = decltype(std::declval<OpenEXR::IStream>().tellg());
 
 constexpr int kExrBitsPerSample = 16;
 constexpr int kExrAlphaBits = 16;
-
-float GetIntensityTarget(float target_nits, const OpenEXR::Header& exr_header) {
-  if (OpenEXR::hasWhiteLuminance(exr_header)) {
-    const float exr_luminance = OpenEXR::whiteLuminance(exr_header);
-    if (target_nits != 0) {
-      JXL_WARNING(
-          "overriding OpenEXR whiteLuminance of %g with user-specified value "
-          "of %g",
-          exr_luminance, target_nits);
-      return target_nits;
-    }
-    return exr_luminance;
-  }
-  if (target_nits != 0) {
-    return target_nits;
-  }
-  JXL_WARNING(
-      "no OpenEXR whiteLuminance tag found and no intensity_target specified, "
-      "defaulting to %g",
-      kDefaultIntensityTarget);
-  return kDefaultIntensityTarget;
-}
 
 size_t GetNumThreads(ThreadPool* pool) {
   size_t exr_num_threads = 1;
@@ -129,8 +108,8 @@ class InMemoryOStream : public OpenEXR::OStream {
 }  // namespace
 
 Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
-                      const SizeConstraints& constraints, float target_nits,
-                      ThreadPool* pool, PackedPixelFile* ppf) {
+                      const SizeConstraints& constraints, ThreadPool* pool,
+                      PackedPixelFile* ppf) {
   // Get the number of threads we should be using for OpenEXR.
   // OpenEXR creates its own set of threads, independent from ours. `pool` is
   // only used for converting from a buffer of OpenEXR::Rgba to Image3F.
@@ -159,8 +138,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   const bool has_alpha = (input.channels() & OpenEXR::RgbaChannels::WRITE_A) ==
                          OpenEXR::RgbaChannels::WRITE_A;
 
-  const float intensity_target =
-      GetIntensityTarget(target_nits, input.header());
+  const float intensity_target = OpenEXR::hasWhiteLuminance(input.header())
+                                     ? OpenEXR::whiteLuminance(input.header())
+                                     : kDefaultIntensityTarget;
 
   auto image_size = input.displayWindow().size();
   // Size is computed as max - min, but both bounds are inclusive.
@@ -268,8 +248,8 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* linear;
-  JXL_RETURN_IF_ERROR(
-      TransformIfNeeded(io->Main(), c_linear, pool, &store, &linear));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(io->Main(), c_linear, GetJxlCms(), pool,
+                                        &store, &linear));
 
   const bool has_alpha = io->Main().HasAlpha();
   const bool alpha_is_premultiplied = io->Main().AlphaIsPremultiplied();

@@ -39,6 +39,7 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -48,8 +49,6 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
-#include "tools/cpu/cpu.h"
-#include "tools/cpu/os_specific.h"
 #include "tools/speed_stats.h"
 
 namespace jxl {
@@ -216,9 +215,10 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         if (fabs(params.intensity_target - 255.0f) < 1e-3) {
           params.intensity_target = 80.0;
         }
-        distance = ButteraugliDistance(ib1, ib2, params, &distmap, inner_pool);
+        distance = ButteraugliDistance(ib1, ib2, params, GetJxlCms(), &distmap,
+                                       inner_pool);
         // Ensure pixels in range 0-1
-        s->distance_2 += ComputeDistance2(ib1, ib2);
+        s->distance_2 += ComputeDistance2(ib1, ib2, GetJxlCms());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -287,7 +287,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
         JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
-                                  inner_pool));
+                                  GetJxlCms(), inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 
@@ -773,19 +773,10 @@ class Benchmark {
   }
 
  private:
-  static int NumCores() {
-    jpegxl::tools::cpu::ProcessorTopology topology;
-    JXL_CHECK(DetectProcessorTopology(&topology));
-    const int num_cores =
-        static_cast<int>(topology.packages * topology.cores_per_package);
-    JXL_CHECK(num_cores != 0);
-    return num_cores;
-  }
-
-  static int NumOuterThreads(const int num_cores, const int num_tasks) {
+  static int NumOuterThreads(const int num_hw_threads, const int num_tasks) {
     int num_threads = Args()->num_threads;
     // Default to #cores
-    if (num_threads < 0) num_threads = num_cores;
+    if (num_threads < 0) num_threads = num_hw_threads;
 
     // As a safety precaution, limit the number of threads to 4x the number of
     // available CPUs.
@@ -801,13 +792,14 @@ class Benchmark {
     return num_threads;
   }
 
-  static int NumInnerThreads(const int num_cores, const int num_threads) {
+  static int NumInnerThreads(const int num_hw_threads, const int num_threads) {
     int num_inner = Args()->inner_threads;
 
     // Default: distribute remaining cores among tasks.
     if (num_inner < 0) {
-      const int cores_for_outer = num_cores - num_threads;
-      num_inner = num_threads == 0 ? num_cores : cores_for_outer / num_threads;
+      const int cores_for_outer = num_hw_threads - num_threads;
+      num_inner =
+          num_threads == 0 ? num_hw_threads : cores_for_outer / num_threads;
     }
 
     // Just one thread is counterproductive.
@@ -816,51 +808,22 @@ class Benchmark {
     return num_inner;
   }
 
-  // Pins the first worker thread in pool to cpus[*next_index] etc.
-  // Not thread-safe (non-atomic update of next_index).
-  static void PinThreads(ThreadPoolInternal* pool, const std::vector<int>& cpus,
-                         size_t* next_index) {
-    // No benefit to pinning if no actual worker threads.
-    if (pool->NumWorkerThreads() == 0) return;
-
-    pool->RunOnEachThread([&](int /*task*/, const int thread) {
-      const size_t index = *next_index + static_cast<size_t>(thread);
-      if (index < cpus.size()) {
-        // printf("pin pool %p thread %3d to index %3" PRIuS " = cpu %3d\n",
-        //        static_cast<void*>(pool), thread, index, cpus[index]);
-        if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[index])) {
-          fprintf(stderr,
-                  "WARNING: failed to pin thread %d, next %" PRIuS ".\n",
-                  thread, *next_index);
-        }
-      }
-    });
-    *next_index += pool->NumWorkerThreads();
-  }
-
   static void InitThreads(
       const int num_tasks, std::unique_ptr<ThreadPoolInternal>* pool,
       std::vector<std::unique_ptr<ThreadPoolInternal>>* inner_pools) {
-    const int num_cores = NumCores();
-    const int num_threads = NumOuterThreads(num_cores, num_tasks);
-    const int num_inner = NumInnerThreads(num_cores, num_threads);
+    const int num_hw_threads = std::thread::hardware_concurrency();
+    const int num_threads = NumOuterThreads(num_hw_threads, num_tasks);
+    const int num_inner = NumInnerThreads(num_hw_threads, num_threads);
 
-    fprintf(stderr, "%d cores, %d tasks, %d threads, %d inner threads\n",
-            num_cores, num_tasks, num_threads, num_inner);
+    fprintf(stderr,
+            "%d total threads, %d tasks, %d threads, %d inner threads\n",
+            num_hw_threads, num_tasks, num_threads, num_inner);
 
     pool->reset(new ThreadPoolInternal(num_threads));
     // Main thread OR worker threads in pool each get a possibly empty nested
     // pool (helps use all available cores when #tasks < #threads)
     for (size_t i = 0; i < (*pool)->NumThreads(); ++i) {
       inner_pools->emplace_back(new ThreadPoolInternal(num_inner));
-    }
-
-    // Pin all actual worker threads to available CPUs.
-    const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
-    size_t next_index = 0;
-    PinThreads(pool->get(), cpus, &next_index);
-    for (std::unique_ptr<ThreadPoolInternal>& inner : *inner_pools) {
-      PinThreads(inner.get(), cpus, &next_index);
     }
   }
 
@@ -982,12 +945,15 @@ class Benchmark {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
 
-          loaded_images[i].target_nits = Args()->intensity_target;
           loaded_images[i].dec_target = jpeg_transcoding_requested
                                             ? DecodeTarget::kQuantizedCoeffs
                                             : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
             ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
+            if (ok && Args()->intensity_target != 0) {
+              loaded_images[i].metadata.m.SetIntensityTarget(
+                  Args()->intensity_target);
+            }
           }
           if (!ok) {
             if (!Args()->silent_errors) {
@@ -999,7 +965,8 @@ class Benchmark {
           if (!Args()->decode_only && all_color_aware) {
             const bool is_gray = loaded_images[i].Main().IsGray();
             const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
-            if (!loaded_images[i].TransformTo(c_desired, /*pool=*/nullptr)) {
+            if (!loaded_images[i].TransformTo(c_desired, GetJxlCms(),
+                                              /*pool=*/nullptr)) {
               JXL_ABORT("Failed to transform to lin. sRGB %s",
                         fnames[i].c_str());
             }

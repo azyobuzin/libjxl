@@ -13,6 +13,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "tools/viewer/load_jxl.h"
 
 namespace jxl {
@@ -38,6 +39,7 @@ bool canLoadImageWithExtension(QString extension) {
 }
 
 QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
+                 const float intensityTarget,
                  const QString& sourceColorSpaceHint) {
   qint64 elapsed;
   QImage img = loadJxlImage(filename, targetIccProfile, &elapsed);
@@ -54,6 +56,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
     return QImage();
   }
+  decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;
@@ -65,7 +68,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, &converted, &pool)) {
+  if (!ib.CopyTo(Rect(ib), targetColorSpace, GetJxlCms(), &converted, &pool)) {
     return QImage();
   }
 
