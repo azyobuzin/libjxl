@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <optional>
 #include <queue>
 
 #include "lib/jxl/base/printf_macros.h"
@@ -124,9 +125,28 @@ FlatTree FilterTree(const Tree &global_tree,
   return output;
 }
 
+static std::optional<bool> print_entropy_enabled;
+
+static bool IsPrintEntropyEnabled() {
+  if (JXL_UNLIKELY(!print_entropy_enabled)) {
+    const char *env = getenv("JXL_PRINT_DECODE_ENTROPY");
+    print_entropy_enabled = env != nullptr && *env == '1';
+  }
+
+  return print_entropy_enabled.value();
+}
+
+static void PrintDecodeEntropy(const DecodingRect *rect, pixel_type chan, size_t x, size_t y, double entropy) {
+  if (rect == nullptr) return;
+
+  if (IsPrintEntropyEnabled()) {
+    printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS ",%f\n", rect->where, chan, rect->frame_idx, rect->ybegin + y, rect->xbegin + x, entropy);
+  }
+}
+
 #define READ_WITH_ENTROPY(ctx, br) ( \
   ve = reader->ReadHybridUintClusteredWithEntropy(ctx, br), \
-  (rect ? printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS ",%f\n", rect->where, chan, rect->frame_idx, rect->ybegin + y, rect->xbegin + x, ve.entropy) : 0), \
+  PrintDecodeEntropy(rect, chan, x, y, ve.entropy), \
   ve.value)
 
 Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
@@ -193,7 +213,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type *JXL_RESTRICT r = channel.Row(y);
           std::fill(r, r + channel.w, v);
 
-          if (rect) {
+          if (rect && IsPrintEntropyEnabled()) {
             for (size_t x = 0; x < channel.w; x++)
               printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS ",0\n", rect->where, chan, rect->frame_idx, rect->ybegin + y, rect->xbegin + x);
           }

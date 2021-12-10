@@ -18,25 +18,29 @@ if len(sys.argv) < 2:
     print("Usage: pxentropy.py path/to/image.jxl ...", file=sys.stderr)
     sys.exit(1)
 
+# djxl 実行時に JXL_PRINT_DECODE_ENTROPY 環境変数を与える
+djxl_env = dict(os.environ, JXL_PRINT_DECODE_ENTROPY="1")
+
 with TemporaryDirectory() as temp_dir:
     for i in range(1, len(sys.argv)):
         src_path = sys.argv[i]
         print("Decoding", os.path.basename(src_path), file=sys.stderr)
 
-        dflif_result = subprocess.run(
+        djxl_result = subprocess.run(
             [DJXL_PATH, src_path, os.path.join(temp_dir, f"{i}.png")],
             stdout=subprocess.PIPE,
             text=True,
+            env=djxl_env
         )
 
-        if dflif_result.returncode != 0:
+        if djxl_result.returncode != 0:
             print("Failed to decode", src_path, file=sys.stderr)
             continue
 
         # 「Decode Entropy: where,p,fr,r,c,entropy」の形式で出力されているので、収集する
         groups = {}
         methods = set()
-        for line in dflif_result.stdout.splitlines():
+        for line in djxl_result.stdout.splitlines():
             if not line.startswith("Decode Entropy: "):
                 continue
 
@@ -51,6 +55,7 @@ with TemporaryDirectory() as temp_dir:
 
         stem = Path(src_path).stem
 
+        # チャネル、フレームごとに画像として結果を出力する
         for (key, entries) in groups.items():
             dst_path = f"{stem} p={key[0]} fr={key[1]}.png"
             print("Writing", dst_path, file=sys.stderr)

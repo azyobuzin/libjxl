@@ -5,7 +5,9 @@
 
 #include "lib/jxl/modular/encoding/dec_ma.h"
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 
@@ -92,12 +94,18 @@ Status DecodeTree(BitReader *br, Tree *tree, size_t tree_size_limit) {
   if (tree_code.degenerate_symbols[tree_context_map[kPropertyContext]] > 0) {
     return JXL_FAILURE("Infinite tree");
   }
+  size_t bits_before = br->TotalBitsConsumed();
   ANSSymbolReader reader(&tree_code, br);
   JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, tree,
                                  std::min(tree_size_limit, kMaxTreeSize)));
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
   }
+  size_t bits_after = br->TotalBitsConsumed();
+  JXL_DEBUG_V(8, "MA bits %" PRIuS, bits_after - bits_before);
+#ifdef JXL_PRINT_DECODED_TREE
+  PrintTree(*tree, "jxl_debug/decoded_tree");
+#endif
   return true;
 }
 
