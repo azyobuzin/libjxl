@@ -1,0 +1,56 @@
+#include "images_provider.h"
+
+#include <tbb/parallel_for.h>
+
+#include <opencv2/imgcodecs.hpp>
+
+#include "lib/jxl/modular/transform/enc_transform.h"
+
+using namespace jxl;
+
+namespace research {
+
+std::optional<Image> FileImagesProvider::next() {
+  if (current_idx >= paths.size()) return std::nullopt;
+
+  const std::string& path = paths[current_idx++];
+  Image img = LoadImage(path);
+
+  if (img.error) JXL_ABORT("Failed to load %s", path.c_str());
+
+  return img;
+}
+
+void FileImagesProvider::reset() { current_idx = 0; }
+
+Image LoadImage(const std::string& path) {
+  cv::Mat mat = cv::imread(path, cv::IMREAD_COLOR);
+
+  // Imageの引数なしコンストラクタはエラーを表現する
+  if (mat.empty()) return {};
+
+  Image img(mat.cols, mat.rows, 8, 3);
+
+  tbb::parallel_for(0, mat.rows, [&](int y) {
+    const auto* src = mat.ptr<cv::Point3_<uint8_t>>(y);
+    auto* dst_r = img.channel[0].Row(y);
+    auto* dst_g = img.channel[1].Row(y);
+    auto* dst_b = img.channel[2].Row(y);
+
+    for (int x = 0; x < mat.cols; x++) {
+      dst_b[x] = src[x].x;
+      dst_g[x] = src[x].y;
+      dst_r[x] = src[x].z;
+    }
+  });
+
+  Transform ycocg(TransformId::kRCT);
+  ycocg.rct_type = 6;
+  ycocg.begin_c = img.nb_meta_channels;
+  if (TransformForward(ycocg, img, weighted::Header{}, nullptr))
+    img.transform.push_back(std::move(ycocg));
+
+  return img;
+}
+
+}  // namespace research

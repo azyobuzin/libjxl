@@ -13,4 +13,16 @@ class ImagesProvider {
   virtual ~ImagesProvider() {}
 };
 
+class FileImagesProvider : public ImagesProvider {
+  std::vector<std::string> paths;
+  size_t current_idx;
+
+  public:
+  FileImagesProvider(std::vector<std::string> paths) : paths(paths), current_idx(0) {}
+  std::optional<jxl::Image> next() override;
+  void reset() override;
+};
+
+jxl::Image LoadImage(const std::string& path);
+
 }  // namespace research
