@@ -2,7 +2,7 @@
 
 #include <fmt/core.h>
 #include <tbb/parallel_for.h>
-#include <tbb/pipeline.h>
+#include <tbb/parallel_reduce.h>
 
 #include <random>
 
@@ -11,35 +11,73 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 
 using namespace jxl;
+using namespace research;
+
+namespace {
+class CollectSamplesBody {
+  ImagesProvider &images;
+  const ModularOptions &options;
+
+ public:
+  SamplesForQuantization result;
+
+  CollectSamplesBody(ImagesProvider &images,
+                     const ModularOptions &options) noexcept
+      : images(images), options(options) {}
+
+  CollectSamplesBody(const CollectSamplesBody &other, tbb::split) noexcept
+      : images(other.images), options(other.options) {}
+
+  void operator()(const tbb::blocked_range<size_t> &range) {
+    for (auto i = range.begin(); i < range.end(); i++) {
+      auto image = images.get(i);
+
+      // すべてが有効なチャンネルであると仮定する（パレット変換をしていない）
+      JXL_ASSERT(image.nb_meta_channels == 0);
+
+      CollectPixelSamples(image, options, 0, result.group_pixel_count,
+                          result.channel_pixel_count, result.pixel_samples,
+                          result.diff_samples);
+    }
+  }
+
+  void join(CollectSamplesBody &rhs) {
+    // Merge group_pixel_count
+    if (result.group_pixel_count.size() < rhs.result.group_pixel_count.size())
+      result.group_pixel_count.resize(rhs.result.group_pixel_count.size());
+    for (size_t i = 0; i < rhs.result.group_pixel_count.size(); i++)
+      result.group_pixel_count[i] += rhs.result.group_pixel_count[i];
+
+    // Merge channel_pixel_count
+    if (result.channel_pixel_count.size() <
+        rhs.result.channel_pixel_count.size())
+      result.channel_pixel_count.resize(rhs.result.channel_pixel_count.size());
+    for (size_t i = 0; i < rhs.result.channel_pixel_count.size(); i++)
+      result.channel_pixel_count[i] += rhs.result.channel_pixel_count[i];
+
+    // Merge pixel_samples
+    result.pixel_samples.reserve(result.pixel_samples.size() +
+                                 rhs.result.pixel_samples.size());
+    std::copy(rhs.result.pixel_samples.cbegin(),
+              rhs.result.pixel_samples.cend(),
+              std::back_inserter(result.pixel_samples));
+
+    // Merge diff_samples
+    result.diff_samples.reserve(result.diff_samples.size() +
+                                rhs.result.diff_samples.size());
+    std::copy(rhs.result.diff_samples.cbegin(), rhs.result.diff_samples.cend(),
+              std::back_inserter(result.diff_samples));
+  }
+};
+}  // namespace
 
 namespace research {
 
 SamplesForQuantization CollectSamplesForQuantization(
-    ImagesProvider &images_provider, const ModularOptions &options) {
-  SamplesForQuantization result;
-
-  auto producer = [&](tbb::flow_control &fc) -> Image {
-    auto img_opt = images_provider.next();
-    if (img_opt) return std::move(img_opt).value();
-    fc.stop();
-    return {};
-  };
-
-  auto consumer = [&](Image image) {
-    // すべてが有効なチャンネルであると仮定する（パレット変換をしていない）
-    JXL_ASSERT(image.nb_meta_channels == 0);
-
-    CollectPixelSamples(image, options, 0, result.group_pixel_count,
-                        result.channel_pixel_count, result.pixel_samples,
-                        result.diff_samples);
-  };
-
-  tbb::parallel_pipeline(
-      2, tbb::make_filter<void, Image>(tbb::filter::serial_in_order, producer) &
-             tbb::make_filter<Image, void>(tbb::filter::serial_out_of_order,
-                                           consumer));
-
-  return result;
+    ImagesProvider &images, const ModularOptions &options) {
+  CollectSamplesBody body(images, options);
+  tbb::parallel_reduce(tbb::blocked_range<size_t>(0, images.size(), 8), body);
+  return std::move(body.result);
 }
 
 void InitializeTreeSamples(TreeSamples &tree_samples,

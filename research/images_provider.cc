@@ -10,10 +10,8 @@ using namespace jxl;
 
 namespace research {
 
-std::optional<Image> FileImagesProvider::next() {
-  if (current_idx >= paths.size()) return std::nullopt;
-
-  const std::string& path = paths[current_idx++];
+Image FileImagesProvider::get(size_t idx) {
+  const std::string& path = paths.at(idx);
   Image img = LoadImage(path, ycocg);
 
   if (img.error) JXL_ABORT("Failed to load %s", path.c_str());
@@ -24,8 +22,6 @@ std::optional<Image> FileImagesProvider::next() {
 
   return img;
 }
-
-void FileImagesProvider::reset() { current_idx = 0; }
 
 Image LoadImage(const std::string& path, bool ycocg) {
   cv::Mat mat = cv::imread(path, cv::IMREAD_COLOR);

@@ -4,13 +4,10 @@
 
 namespace research {
 
-// TODO: next, reset ではなくランダムアクセスできるようにするほうが並列化に対応できる
-//       例えば size_t size() と Image get(size_t idx)
-
 class ImagesProvider {
  public:
-  virtual std::optional<jxl::Image> next() = 0;
-  virtual void reset() = 0;
+  virtual size_t size() const noexcept = 0;
+  virtual jxl::Image get(size_t idx) = 0;
 
  protected:
   virtual ~ImagesProvider() {}
@@ -18,12 +15,11 @@ class ImagesProvider {
 
 class FileImagesProvider : public ImagesProvider {
   std::vector<std::string> paths;
-  size_t current_idx;
 
-  public:
-  FileImagesProvider(std::vector<std::string> paths) : paths(paths), current_idx(0) {}
-  std::optional<jxl::Image> next() override;
-  void reset() override;
+ public:
+  FileImagesProvider(std::vector<std::string> paths) : paths(paths) {}
+  size_t size() const noexcept override { return paths.size(); }
+  jxl::Image get(size_t idx) override;
 
   // YCoCg 変換を行うか
   bool ycocg = false;

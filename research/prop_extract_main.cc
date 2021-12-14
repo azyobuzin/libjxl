@@ -20,8 +20,8 @@ int main(int argc, char *argv[]) {
   // clang-format off
   ops_desc.add_options()
     ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか")
-    ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]");
-    ("y-only", po::bool_switch(), "Yチャネルのみを利用する");
+    ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
+    ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
     ("csv", po::bool_switch(), "結果をCSV形式で出力する");
   // clang-format on
 
@@ -66,16 +66,14 @@ int main(int argc, char *argv[]) {
   InitializeTreeSamples(tree_samples, props_to_use, options.max_property_values,
                         samples_for_quantization);
 
-  images.reset();
-
   std::vector<std::string> descriptions;
 
   // 各画像のプロパティから特徴量を求めて、出力する
   if (csv) {
     bool is_first = true;
 
-    for (const auto &path : paths) {
-      auto img = images.next().value();
+    for (size_t i = 0; i < paths.size(); i++) {
+      auto img = images.get(i);
       auto result =
           ExtractPropertiesFromImage(img, split, options, tree_samples,
                                      is_first ? &descriptions : nullptr);
@@ -87,21 +85,21 @@ int main(int argc, char *argv[]) {
         is_first = false;
       }
 
-      std::cout << "\"" << path << "\"";
+      std::cout << "\"" << paths[i] << "\"";
       for (const auto &x : result) std::cout << "," << x;
       std::cout << std::endl;
     }
   } else {
-    for (const auto &path : paths) {
-      std::cout << path << std::endl;
-      auto img = images.next().value();
+    for (size_t i = 0; i < paths.size(); i++) {
+      std::cout << paths[i] << std::endl;
+      auto img = images.get(i);
 
       descriptions.clear();
       auto result = ExtractPropertiesFromImage(img, split, options,
                                                tree_samples, &descriptions);
 
-      for (size_t i = 0; i < result.size(); i++) {
-        std::cout << descriptions[i] << "\t" << result[i] << std::endl;
+      for (size_t j = 0; j < result.size(); j++) {
+        std::cout << descriptions[j] << "\t" << result[j] << std::endl;
       }
 
       std::cout << std::endl;
