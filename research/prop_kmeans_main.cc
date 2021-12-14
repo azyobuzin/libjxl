@@ -1,11 +1,16 @@
+// 画像からプロパティを抽出し、それをk-meansでクラスタリングする
+
 #include <boost/program_options.hpp>
 #include <iostream>
+#include <mlpack/core.hpp>
+#include <mlpack/methods/kmeans/kmeans.hpp>
 
 #include "prop_extract.h"
 
 namespace po = boost::program_options;
 
 using namespace research;
+using namespace mlpack::kmeans;
 
 int main(int argc, char *argv[]) {
   po::options_description pos_ops;
@@ -21,7 +26,8 @@ int main(int argc, char *argv[]) {
                          "画像を何回分割するか");
   ops_desc.add_options()("fraction", po::value<float>()->default_value(.5f),
                          "サンプリングする画素の割合 (0, 1]");
-  ops_desc.add_options()("csv", po::bool_switch(), "結果をCSV形式で出力する");
+  ops_desc.add_options()("k", po::value<uint16_t>()->default_value(2),
+                         "クラスタ数");
 
   po::options_description all_desc;
   all_desc.add(pos_ops).add(ops_desc);
@@ -38,14 +44,14 @@ int main(int argc, char *argv[]) {
   } catch (const po::error &e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: prop_extract [OPTIONS] IMAGE_FILE..." << std::endl
+              << "Usage: prop_kmeans [OPTIONS] IMAGE_FILE..." << std::endl
               << ops_desc << std::endl;
     return 1;
   }
 
-  size_t split = vm["split"].as<uint16_t>();
-  float fraction = vm["fraction"].as<float>();
-  bool csv = vm["csv"].as<bool>();
+  const size_t split = vm["split"].as<uint16_t>();
+  const float fraction = vm["fraction"].as<float>();
+  const size_t k = vm["k"].as<uint16_t>();
 
   const std::vector<std::string> &paths =
       vm["image-file"].as<std::vector<std::string>>();
@@ -63,44 +69,31 @@ int main(int argc, char *argv[]) {
 
   images.reset();
 
-  std::vector<std::string> descriptions;
+  const size_t n_cols =
+      (size_t(2) << split /* 2^split * 2 */) * props_to_use.size();
+  arma::mat prop_mat(paths.size(), n_cols, arma::fill::none);
 
-  // 各画像のプロパティから特徴量を求めて、出力する
-  if (csv) {
-    bool is_first = true;
+  // 特徴量を prop_mat に代入していく
+  for (size_t i = 0; i < paths.size(); i++) {
+    auto img = images.next().value();
+    auto result =
+        ExtractPropertiesFromImage(img, split, options, tree_samples, nullptr);
+    JXL_ASSERT(result.size() == n_cols);
+    auto row = prop_mat.row(i);
+    std::copy(result.begin(), result.end(), row.begin());
+  }
 
-    for (const auto &path : paths) {
-      auto img = images.next().value();
-      auto result =
-          ExtractPropertiesFromImage(img, split, options, tree_samples,
-                                     is_first ? &descriptions : nullptr);
+  // クラスタリング
+  KMeans<> model;
+  arma::Row<size_t> assignments;
+  model.Cluster(prop_mat, k, assignments);
 
-      if (is_first) {
-        std::cout << "path";
-        for (const auto &desc : descriptions) std::cout << "," << desc;
-        std::cout << std::endl;
-        is_first = false;
-      }
-
-      std::cout << "\"" << path << "\"";
-      for (const auto &x : result) std::cout << "," << x;
-      std::cout << std::endl;
+  for (size_t i = 0; i < k; i++) {
+    std::cout << "=== Cluster " << i << " ===" << std::endl;
+    for (size_t j = 0; j < paths.size(); j++) {
+      if (assignments[j] == i) std::cout << paths[j] << std::endl;
     }
-  } else {
-    for (const auto &path : paths) {
-      std::cout << path << std::endl;
-      auto img = images.next().value();
-
-      descriptions.clear();
-      auto result = ExtractPropertiesFromImage(img, split, options,
-                                               tree_samples, &descriptions);
-
-      for (size_t i = 0; i < result.size(); i++) {
-        std::cout << descriptions[i] << "\t" << result[i] << std::endl;
-      }
-
-      std::cout << std::endl;
-    }
+    std::cout << std::endl;
   }
 
   return 0;

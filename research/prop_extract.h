@@ -25,6 +25,9 @@ struct SamplesForQuantization {
   std::vector<jxl::pixel_type> diff_samples;
 };
 
+// gradient, W-NW, NW-N, N-NE, N-NN (from splitting_heuristics_properties)
+const uint32_t PROPS_TO_USE[] = {9, 10, 11, 12, 13};
+
 // プロパティ値の量子化に使用するヒストグラムの材料を収集
 SamplesForQuantization CollectSamplesForQuantization(
     ImagesProvider &images_provider, const jxl::ModularOptions &options);

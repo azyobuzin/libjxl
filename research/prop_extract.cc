@@ -141,7 +141,8 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
       PrecomputeReferences(channel, y, image, i, &references);
       InitPropsRow(&properties, static_props, y);
 
-      do {
+      for (; next_px != sampling_points.cend() && next_px->first == y;
+           ++next_px) {
         size_t x = next_px->second;
         PredictLearn(&properties, channel.w, p + x, onerow, x, y,
                      Predictor::Gradient, references, &wp_state);
@@ -152,7 +153,7 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
               prop_idx, properties[tree_samples.PropertyFromIndex(prop_idx)]));
           quantized_values[prop_idx].push_back(qv);
         }
-      } while (next_px != sampling_points.cend() && next_px->first == y);
+      }
     }
   }
 
