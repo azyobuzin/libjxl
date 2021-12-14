@@ -14,16 +14,20 @@ std::optional<Image> FileImagesProvider::next() {
   if (current_idx >= paths.size()) return std::nullopt;
 
   const std::string& path = paths[current_idx++];
-  Image img = LoadImage(path);
+  Image img = LoadImage(path, ycocg);
 
   if (img.error) JXL_ABORT("Failed to load %s", path.c_str());
+
+  if (only_first_channel)
+    img.channel.erase(img.channel.begin() + (img.nb_meta_channels + 1),
+                      img.channel.end());
 
   return img;
 }
 
 void FileImagesProvider::reset() { current_idx = 0; }
 
-Image LoadImage(const std::string& path) {
+Image LoadImage(const std::string& path, bool ycocg) {
   cv::Mat mat = cv::imread(path, cv::IMREAD_COLOR);
 
   // Imageの引数なしコンストラクタはエラーを表現する
@@ -44,11 +48,13 @@ Image LoadImage(const std::string& path) {
     }
   });
 
-  Transform ycocg(TransformId::kRCT);
-  ycocg.rct_type = 6;
-  ycocg.begin_c = img.nb_meta_channels;
-  if (TransformForward(ycocg, img, weighted::Header{}, nullptr))
-    img.transform.push_back(std::move(ycocg));
+  if (ycocg) {
+    Transform t(TransformId::kRCT);
+    t.rct_type = 6;
+    t.begin_c = img.nb_meta_channels;
+    if (TransformForward(t, img, weighted::Header{}, nullptr))
+      img.transform.push_back(std::move(t));
+  }
 
   return img;
 }

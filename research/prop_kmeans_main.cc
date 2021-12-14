@@ -26,14 +26,14 @@ int main(int argc, char *argv[]) {
   pos_desc.add("image-file", -1);
 
   po::options_description ops_desc;
-  ops_desc.add_options()("split", po::value<uint16_t>()->default_value(2),
-                         "画像を何回分割するか");
-  ops_desc.add_options()("fraction", po::value<float>()->default_value(.5f),
-                         "サンプリングする画素の割合 (0, 1]");
-  ops_desc.add_options()("k", po::value<uint16_t>()->default_value(2),
-                         "クラスタ数");
-  ops_desc.add_options()("copy-to", po::value<fs::path>(),
-                         "クラスタリングされた画像をディレクトリにコピーする");
+  // clang-format off
+  ops_desc.add_options()
+    ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか")
+    ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
+    ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
+    ("k", po::value<uint16_t>()->default_value(2), "クラスタ数")
+    ("copy-to", po::value<fs::path>(), "クラスタリングされた画像をディレクトリにコピーする");
+  // clang-format on
 
   po::options_description all_desc;
   all_desc.add(pos_ops).add(ops_desc);
@@ -62,6 +62,9 @@ int main(int argc, char *argv[]) {
   const std::vector<std::string> &paths =
       vm["image-file"].as<std::vector<std::string>>();
   FileImagesProvider images(paths);
+  images.ycocg = true;
+  images.only_first_channel = vm["y-only"].as<bool>();
+
   jxl::ModularOptions options{.nb_repeats = fraction};
   std::vector<uint32_t> props_to_use(std::cbegin(PROPS_TO_USE),
                                      std::cend(PROPS_TO_USE));
