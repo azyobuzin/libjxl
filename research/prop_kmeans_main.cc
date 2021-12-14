@@ -1,12 +1,16 @@
 // 画像からプロパティを抽出し、それをk-meansでクラスタリングする
 
+#include <fmt/core.h>
+
 #include <boost/program_options.hpp>
+#include <filesystem>
 #include <iostream>
 #include <mlpack/core.hpp>
 #include <mlpack/methods/kmeans/kmeans.hpp>
 
 #include "prop_extract.h"
 
+namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 using namespace research;
@@ -28,6 +32,8 @@ int main(int argc, char *argv[]) {
                          "サンプリングする画素の割合 (0, 1]");
   ops_desc.add_options()("k", po::value<uint16_t>()->default_value(2),
                          "クラスタ数");
+  ops_desc.add_options()("copy-to", po::value<fs::path>(),
+                         "クラスタリングされた画像をディレクトリにコピーする");
 
   po::options_description all_desc;
   all_desc.add(pos_ops).add(ops_desc);
@@ -69,17 +75,17 @@ int main(int argc, char *argv[]) {
 
   images.reset();
 
-  const size_t n_cols =
+  const size_t n_rows =
       (size_t(2) << split /* 2^split * 2 */) * props_to_use.size();
-  arma::mat prop_mat(paths.size(), n_cols, arma::fill::none);
+  arma::mat prop_mat(n_rows, paths.size(), arma::fill::none);
 
   // 特徴量を prop_mat に代入していく
   for (size_t i = 0; i < paths.size(); i++) {
     auto img = images.next().value();
     auto result =
         ExtractPropertiesFromImage(img, split, options, tree_samples, nullptr);
-    JXL_ASSERT(result.size() == n_cols);
-    auto row = prop_mat.row(i);
+    JXL_ASSERT(result.size() == n_rows);
+    auto row = prop_mat.col(i);
     std::copy(result.begin(), result.end(), row.begin());
   }
 
@@ -87,6 +93,7 @@ int main(int argc, char *argv[]) {
   KMeans<> model;
   arma::Row<size_t> assignments;
   model.Cluster(prop_mat, k, assignments);
+  JXL_ASSERT(assignments.size() == paths.size());
 
   for (size_t i = 0; i < k; i++) {
     std::cout << "=== Cluster " << i << " ===" << std::endl;
@@ -94,6 +101,25 @@ int main(int argc, char *argv[]) {
       if (assignments[j] == i) std::cout << paths[j] << std::endl;
     }
     std::cout << std::endl;
+  }
+
+  if (!vm["copy-to"].empty()) {
+    // 出力先ディレクトリ作成
+    const fs::path &dst_dir = vm["copy-to"].as<fs::path>();
+    std::vector<fs::path> dst_dirs;
+    dst_dirs.reserve(k);
+    for (size_t i = 0; i < k; i++) {
+      const auto &d =
+          dst_dirs.emplace_back(dst_dir / fmt::format("cluster{:02}", i));
+      fs::create_directories(d);
+    }
+
+    // クラスタごとのディレクトリにコピー
+    for (size_t i = 0; i < paths.size(); i++) {
+      fs::path src = paths[i];
+      fs::copy(src, dst_dirs.at(assignments[i]) / src.filename(),
+               fs::copy_options::overwrite_existing);
+    }
   }
 
   return 0;
