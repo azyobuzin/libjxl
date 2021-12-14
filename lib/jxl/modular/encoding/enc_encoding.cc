@@ -515,7 +515,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   return true;
 }
 
-Status ModularGenericCompress(Image &image, const ModularOptions &opts,
+Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
                               BitWriter *writer, AuxOut *aux_out, size_t layer,
                               size_t group_id, TreeSamples *tree_samples,
                               size_t *total_pixels, const Tree *tree,

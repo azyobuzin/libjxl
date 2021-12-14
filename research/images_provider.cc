@@ -2,6 +2,7 @@
 
 #include <tbb/parallel_for.h>
 
+#include <filesystem>
 #include <opencv2/imgcodecs.hpp>
 
 #include "lib/jxl/modular/transform/enc_transform.h"
@@ -21,6 +22,10 @@ Image FileImagesProvider::get(size_t idx) {
                       img.channel.end());
 
   return img;
+}
+
+std::string FileImagesProvider::get_label(size_t idx) {
+  return std::filesystem::path(paths.at(idx)).stem().string();
 }
 
 Image LoadImage(const std::string& path, bool ycocg) {

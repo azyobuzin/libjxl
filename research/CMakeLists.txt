@@ -12,14 +12,20 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 
 # 共通ライブラリ
 add_library(research STATIC EXCLUDE_FROM_ALL
+  cost_graph.cc
+  cost_graph_enc.cc
   images_provider.cc
+  progress.cc
   prop_extract.cc
 )
 target_compile_options(research PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(research jxl-static fmt::fmt ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})
-target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}")
+target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmonds-alg/src)
 
 # Executables
+add_executable(cost_graph_enc cost_graph_enc_main.cc)
+target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
+
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})
 

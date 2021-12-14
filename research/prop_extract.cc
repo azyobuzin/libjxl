@@ -11,15 +11,19 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 
 using namespace jxl;
-using namespace research;
+
+namespace research {
 
 namespace {
-class CollectSamplesBody {
+
+struct CollectSamplesBody {
   ImagesProvider &images;
   const ModularOptions &options;
 
- public:
-  SamplesForQuantization result;
+  std::vector<uint32_t> group_pixel_count;
+  std::vector<uint32_t> channel_pixel_count;
+  std::vector<std::vector<jxl::pixel_type>> pixel_samples;
+  std::vector<std::vector<jxl::pixel_type>> diff_samples;
 
   CollectSamplesBody(ImagesProvider &images,
                      const ModularOptions &options) noexcept
@@ -29,55 +33,68 @@ class CollectSamplesBody {
       : images(other.images), options(other.options) {}
 
   void operator()(const tbb::blocked_range<size_t> &range) {
+    auto &ps = pixel_samples.emplace_back();
+    auto &ds = diff_samples.emplace_back();
+
     for (auto i = range.begin(); i < range.end(); i++) {
       auto image = images.get(i);
 
       // すべてが有効なチャンネルであると仮定する（パレット変換をしていない）
       JXL_ASSERT(image.nb_meta_channels == 0);
 
-      CollectPixelSamples(image, options, 0, result.group_pixel_count,
-                          result.channel_pixel_count, result.pixel_samples,
-                          result.diff_samples);
+      CollectPixelSamples(image, options, 0, group_pixel_count,
+                          channel_pixel_count, ps, ds);
     }
   }
 
   void join(CollectSamplesBody &rhs) {
     // Merge group_pixel_count
-    if (result.group_pixel_count.size() < rhs.result.group_pixel_count.size())
-      result.group_pixel_count.resize(rhs.result.group_pixel_count.size());
-    for (size_t i = 0; i < rhs.result.group_pixel_count.size(); i++)
-      result.group_pixel_count[i] += rhs.result.group_pixel_count[i];
+    if (group_pixel_count.size() < rhs.group_pixel_count.size())
+      group_pixel_count.resize(rhs.group_pixel_count.size());
+    for (size_t i = 0; i < rhs.group_pixel_count.size(); i++)
+      group_pixel_count[i] += rhs.group_pixel_count[i];
 
     // Merge channel_pixel_count
-    if (result.channel_pixel_count.size() <
-        rhs.result.channel_pixel_count.size())
-      result.channel_pixel_count.resize(rhs.result.channel_pixel_count.size());
-    for (size_t i = 0; i < rhs.result.channel_pixel_count.size(); i++)
-      result.channel_pixel_count[i] += rhs.result.channel_pixel_count[i];
+    if (channel_pixel_count.size() < rhs.channel_pixel_count.size())
+      channel_pixel_count.resize(rhs.channel_pixel_count.size());
+    for (size_t i = 0; i < rhs.channel_pixel_count.size(); i++)
+      channel_pixel_count[i] += rhs.channel_pixel_count[i];
 
     // Merge pixel_samples
-    result.pixel_samples.reserve(result.pixel_samples.size() +
-                                 rhs.result.pixel_samples.size());
-    std::copy(rhs.result.pixel_samples.cbegin(),
-              rhs.result.pixel_samples.cend(),
-              std::back_inserter(result.pixel_samples));
+    pixel_samples.reserve(pixel_samples.size() + rhs.pixel_samples.size());
+    std::move(rhs.pixel_samples.begin(), rhs.pixel_samples.end(),
+              std::back_inserter(pixel_samples));
 
     // Merge diff_samples
-    result.diff_samples.reserve(result.diff_samples.size() +
-                                rhs.result.diff_samples.size());
-    std::copy(rhs.result.diff_samples.cbegin(), rhs.result.diff_samples.cend(),
-              std::back_inserter(result.diff_samples));
+    diff_samples.reserve(diff_samples.size() + rhs.diff_samples.size());
+    std::move(rhs.diff_samples.begin(), rhs.diff_samples.end(),
+              std::back_inserter(diff_samples));
   }
 };
-}  // namespace
 
-namespace research {
+template <typename T>
+void flatten(const std::vector<std::vector<T>> &src, std::vector<T> &dst) {
+  size_t total = 0;
+  for (const std::vector<T> &x : src) total += x.size();
+  dst.reserve(dst.size() + total);
+
+  for (const std::vector<T> &x : src)
+    dst.insert(dst.end(), x.cbegin(), x.cend());
+}
+
+}  // namespace
 
 SamplesForQuantization CollectSamplesForQuantization(
     ImagesProvider &images, const ModularOptions &options) {
   CollectSamplesBody body(images, options);
   tbb::parallel_reduce(tbb::blocked_range<size_t>(0, images.size(), 8), body);
-  return std::move(body.result);
+
+  SamplesForQuantization result;
+  result.group_pixel_count = std::move(body.group_pixel_count);
+  result.channel_pixel_count = std::move(body.channel_pixel_count);
+  flatten(body.pixel_samples, result.pixel_samples);
+  flatten(body.diff_samples, result.diff_samples);
+  return result;
 }
 
 void InitializeTreeSamples(TreeSamples &tree_samples,
@@ -96,7 +113,7 @@ void InitializeTreeSamples(TreeSamples &tree_samples,
   StaticPropRange range;
   range[0] = {{0, static_cast<uint32_t>(
                       samples_for_quantization.channel_pixel_count.size())}};
-  range[1] = {{0, 0}};
+  range[1] = {{0, 1}};
 
   tree_samples.PreQuantizeProperties(
       range, dummy_multiplier_info, samples_for_quantization.group_pixel_count,

@@ -36,7 +36,7 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
 // TODO(veluca): make cleaner interfaces.
 
 Status ModularGenericCompress(
-    Image &image, const ModularOptions &opts, BitWriter *writer,
+    const Image &image, const ModularOptions &opts, BitWriter *writer,
     AuxOut *aux_out = nullptr, size_t layer = 0, size_t group_id = 0,
     // For gathering data for producing a global tree.
     TreeSamples *tree_samples = nullptr, size_t *total_pixels = nullptr,
