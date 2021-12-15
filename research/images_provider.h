@@ -8,7 +8,7 @@ class ImagesProvider {
  public:
   virtual size_t size() const noexcept = 0;
   virtual jxl::Image get(size_t idx) = 0;
-  virtual std::string get_label(size_t idx) { return {}; }
+  virtual std::string get_label(size_t idx);
 
  protected:
   virtual ~ImagesProvider() {}

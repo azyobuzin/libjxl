@@ -74,6 +74,8 @@ size_t ComputeEncodedBits(const Image &image, const ModularOptions &options,
 
   BitWriter writer;
   HistogramParams params;
+  // TODO: LZ77で時間がかかり、オフにしても決定木比較に影響ないならば、 kNone
+  // にしたい
   params.lz77_method = HistogramParams::LZ77Method::kOptimal;
   params.image_widths = std::move(image_widths);
   EntropyEncodingData code;
@@ -193,7 +195,7 @@ std::shared_ptr<ImageTree> CreateMstWithDifferentTree(
     auto &tgt = tree_nodes.at(target(e, graph) - 1);
     src->children.push_back(tgt);
     src->costs.push_back(get(boost::edge_weight_t(), graph, e));
-    JXL_ASSERT(!tgt->parent);
+    JXL_ASSERT(!tgt->parent);  // parent must be null
     tgt->parent = src;
   }
 

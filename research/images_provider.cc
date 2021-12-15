@@ -1,5 +1,6 @@
 #include "images_provider.h"
 
+#include <fmt/core.h>
 #include <tbb/parallel_for.h>
 
 #include <filesystem>
@@ -10,6 +11,10 @@
 using namespace jxl;
 
 namespace research {
+
+std::string ImagesProvider::get_label(size_t idx) {
+  return fmt::format("{}", idx);
+}
 
 Image FileImagesProvider::get(size_t idx) {
   const std::string& path = paths.at(idx);
@@ -53,8 +58,9 @@ Image LoadImage(const std::string& path, bool ycocg) {
     Transform t(TransformId::kRCT);
     t.rct_type = 6;
     t.begin_c = img.nb_meta_channels;
-    if (TransformForward(t, img, weighted::Header{}, nullptr))
-      img.transform.push_back(std::move(t));
+    JXL_CHECK(TransformForward(t, img, weighted::Header{}, nullptr));
+    // ↓ 逆変換を考慮しないなら入れないほうがよさそう
+    // img.transform.push_back(std::move(t));
   }
 
   return img;

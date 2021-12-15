@@ -40,7 +40,7 @@ struct CollectSamplesBody {
       auto image = images.get(i);
 
       // すべてが有効なチャンネルであると仮定する（パレット変換をしていない）
-      JXL_ASSERT(image.nb_meta_channels == 0);
+      JXL_CHECK(image.nb_meta_channels == 0);
 
       CollectPixelSamples(image, options, 0, group_pixel_count,
                           channel_pixel_count, ps, ds);
@@ -125,13 +125,13 @@ void InitializeTreeSamples(TreeSamples &tree_samples,
 BlockPropertyDistributions ExtractPropertiesFromBlock(
     const Image &image, const Rect &block, const ModularOptions &options,
     const TreeSamples &quantizer) {
-  JXL_ASSERT(options.nb_repeats > 0 && options.nb_repeats <= 1);
+  JXL_CHECK(options.nb_repeats > 0 && options.nb_repeats <= 1);
   bool use_all_pixels = options.nb_repeats >= 1;
   size_t n_pixels_to_sample =
       use_all_pixels ? block.xsize() * block.ysize()
                      : static_cast<size_t>(block.xsize() * block.ysize() *
                                            options.nb_repeats);
-  JXL_ASSERT(n_pixels_to_sample > 0);
+  JXL_CHECK(n_pixels_to_sample > 0);
 
   // 座標をサンプリングするために、座標リストをつくる
   // FIXME: 無駄なメモリすぎる
@@ -241,7 +241,7 @@ std::vector<Rect> SplitRect(size_t w, size_t h, size_t split) {
       // 縦を分割（水平）
       for (Rect &r : rects) {
         size_t half = r.ysize() / 2;
-        JXL_ASSERT(half > 0);
+        JXL_CHECK(half > 0);
         tmp_rects.emplace_back(r.x0(), r.y0(), r.xsize(), half);
         tmp_rects.emplace_back(r.x0(), r.y0() + half, r.xsize(),
                                r.ysize() - half);
@@ -250,7 +250,7 @@ std::vector<Rect> SplitRect(size_t w, size_t h, size_t split) {
       // 横を分割（垂直）
       for (Rect &r : rects) {
         size_t half = r.xsize() / 2;
-        JXL_ASSERT(half > 0);
+        JXL_CHECK(half > 0);
         tmp_rects.emplace_back(r.x0(), r.y0(), half, r.ysize());
         tmp_rects.emplace_back(r.x0() + half, r.y0(), r.xsize() - half,
                                r.ysize());
