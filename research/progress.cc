@@ -12,14 +12,19 @@ ConsoleProgressReporter::ConsoleProgressReporter(std::string_view message)
 
 void ConsoleProgressReporter::report(size_t completed_jobs, size_t n_jobs) {
   int_least8_t new_percent = completed_jobs * 100.0 / n_jobs;
-  auto old_percent = percent.load();
-  if (new_percent > old_percent &&
-      percent.compare_exchange_weak(old_percent, new_percent)) {
-    {
-      tbb::spin_mutex::scoped_lock lock(mutex);
-      std::cerr << message << ": " << static_cast<int>(new_percent) << "%\r";
+  while (true) {
+    auto old_percent = percent.load();
+    if (new_percent <= old_percent) return;
+    if (percent.compare_exchange_weak(old_percent, new_percent)) {
+      // 表示すべきパーセンテージが増加したので、ロックを取って描画する
+      {
+        tbb::spin_mutex::scoped_lock lock(mutex);
+        if (new_percent < percent.load()) return;  // ロック内で再チェック
+        std::cerr << message << ": " << static_cast<int>(new_percent) << "%\r";
+      }
+      std::cerr.flush();
+      return;
     }
-    std::cerr.flush();
   }
 }
 

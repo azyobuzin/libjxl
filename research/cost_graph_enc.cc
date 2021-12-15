@@ -1,7 +1,5 @@
 #include <tbb/parallel_for.h>
 
-#include <iostream>
-
 #include "cost_graph.h"
 #include "edmonds_optimum_branching.hpp"
 #include "lib/jxl/modular/encoding/enc_encoding.h"

@@ -87,8 +87,8 @@ int main(int argc, char *argv[]) {
     auto result =
         ExtractPropertiesFromImage(img, split, options, tree_samples, nullptr);
     JXL_ASSERT(result.size() == n_rows);
-    auto row = prop_mat.col(i);
-    std::copy(result.begin(), result.end(), row.begin());
+    auto col = prop_mat.col(i);
+    std::copy(result.begin(), result.end(), col.begin());
   });
 
   // クラスタリング
