@@ -53,10 +53,14 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_splines.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
+#include "lib/jxl/render_pipeline/stage_ycbcr.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/toc.h"
@@ -451,7 +455,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
     FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
               &dec_state_->filter_weights.sigma);
   }
-  decoded_dc_groups_[dc_group_id] = true;
+  decoded_dc_groups_[dc_group_id] = uint8_t{true};
   return true;
 }
 
@@ -662,12 +666,6 @@ void FrameDecoder::PreparePipeline() {
   if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
     JXL_ABORT("Not implemented: extra channels");
   }
-  if (frame_header_.upsampling != 1) {
-    JXL_ABORT("Not implemented: upsampling");
-  }
-  if (!frame_header_.chroma_subsampling.Is444()) {
-    JXL_ABORT("Not implemented: chroma subsampling");
-  }
 
   RenderPipeline::Builder builder(/*num_c=*/3);
 
@@ -675,6 +673,17 @@ void FrameDecoder::PreparePipeline() {
     builder.UseSimpleImplementation();
   } else {
     JXL_ABORT("Not implemented: fast pipeline");
+  }
+
+  if (!frame_header_.chroma_subsampling.Is444()) {
+    for (size_t c = 0; c < 3; c++) {
+      if (frame_header_.chroma_subsampling.HShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/true));
+      }
+      if (frame_header_.chroma_subsampling.VShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/false));
+      }
+    }
   }
 
   if (frame_header_.loop_filter.gab) {
@@ -698,7 +707,16 @@ void FrameDecoder::PreparePipeline() {
     JXL_ABORT("Not implemented: patches");
   }
   if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
-    JXL_ABORT("Not implemented: splines");
+    builder.AddStage(
+        GetSplineStage(&dec_state_->shared->image_features.splines));
+  }
+  // TODO(veluca): extra channels will need some handling too.
+  if (frame_header_.upsampling != 1) {
+    for (size_t c = 0; c < 3; c++) {
+      builder.AddStage(GetUpsamplingStage(
+          frame_header_.nonserialized_metadata->transform_data, c,
+          CeilLog2Nonzero(frame_header_.upsampling)));
+    }
   }
   if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     JXL_ABORT("Not implemented: noise");
@@ -714,7 +732,7 @@ void FrameDecoder::PreparePipeline() {
   }
 
   if (frame_header_.color_transform == ColorTransform::kYCbCr) {
-    JXL_ABORT("Not implemented: YCbCr");
+    builder.AddStage(GetYCbCrStage());
   } else if (frame_header_.color_transform == ColorTransform::kXYB) {
     builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
   }  // Nothing to do for kNone.
@@ -837,8 +855,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
-  if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) ==
-          true &&
+  if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
     if (use_slow_rendering_pipeline_) {
       PreparePipeline();
@@ -971,11 +988,11 @@ Status FrameDecoder::Flush() {
     std::atomic<bool> has_error{false};
     RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
-        [this](size_t num_threads) {
+        [this](const size_t num_threads) {
           PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
           return true;
         },
-        [this, &has_error](size_t g, size_t thread) {
+        [this, &has_error](const uint32_t g, size_t thread) {
           if (decoded_passes_per_ac_group_[g] ==
               frame_header_.passes.num_passes) {
             // This group was drawn already, nothing to do.
@@ -1019,17 +1036,23 @@ int FrameDecoder::SavedAs(const FrameHeader& header) {
   return 0;
 }
 
+bool FrameDecoder::HasEverything() const {
+  if (!decoded_dc_global_) return false;
+  if (!decoded_ac_global_) return false;
+  for (auto& have_dc_group : decoded_dc_groups_) {
+    if (!have_dc_group) return false;
+  }
+  for (auto& nb_passes : decoded_passes_per_ac_group_) {
+    if (nb_passes < max_passes_) return false;
+  }
+  return true;
+}
+
 int FrameDecoder::References() const {
   if (is_finalized_) {
     return 0;
   }
-  if ((!decoded_dc_global_ || !decoded_ac_global_ ||
-       *std::min_element(decoded_dc_groups_.begin(),
-                         decoded_dc_groups_.end()) != 1 ||
-       *std::min_element(decoded_passes_per_ac_group_.begin(),
-                         decoded_passes_per_ac_group_.end()) < max_passes_)) {
-    return 0;
-  }
+  if (!HasEverything()) return 0;
 
   int result = 0;
 
@@ -1078,12 +1101,7 @@ Status FrameDecoder::FinalizeFrame() {
     // particularly useful anyway on upsampling results), so we disable it.
     dec_state_->shared_storage.frame_header.loop_filter.epf_iters = 0;
   }
-  if ((!decoded_dc_global_ || !decoded_ac_global_ ||
-       *std::min_element(decoded_dc_groups_.begin(),
-                         decoded_dc_groups_.end()) != 1 ||
-       *std::min_element(decoded_passes_per_ac_group_.begin(),
-                         decoded_passes_per_ac_group_.end()) < max_passes_) &&
-      !allow_partial_frames_) {
+  if (!HasEverything() && !allow_partial_frames_) {
     return JXL_FAILURE(
         "FinalizeFrame called before the frame was fully decoded");
   }
