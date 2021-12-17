@@ -67,8 +67,8 @@ int main(int argc, char *argv[]) {
   images.only_first_channel = vm["y-only"].as<bool>();
 
   jxl::ModularOptions options{.nb_repeats = fraction};
-  std::vector<uint32_t> props_to_use(std::cbegin(PROPS_TO_USE),
-                                     std::cend(PROPS_TO_USE));
+  std::vector<uint32_t> props_to_use(std::cbegin(kPropsToUse),
+                                     std::cend(kPropsToUse));
   jxl::TreeSamples tree_samples;
 
   // 量子化方法を決定するために適当なサンプリング

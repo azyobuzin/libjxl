@@ -11,6 +11,8 @@ namespace research {
 
 namespace {
 
+typedef BidirectionalCostGraph<size_t> G;
+
 struct LearnedTree {
   Tree tree;
   size_t n_bits;
@@ -34,7 +36,7 @@ LearnedTree LearnTree(const Image &image, const ModularOptions &options) {
 
   StaticPropRange range;
   range[0] = {{0, static_cast<uint32_t>(image.channel.size())}};
-  range[1] = {{0, 1}};
+  range[1] = {{0, 1}}; // group id
   std::vector<ModularMultiplierInfo> multiplier_info;
   tree_samples.PreQuantizeProperties(range, multiplier_info, group_pixel_count,
                                      channel_pixel_count, pixel_samples,
@@ -74,8 +76,8 @@ size_t ComputeEncodedBits(const Image &image, const ModularOptions &options,
 
   BitWriter writer;
   HistogramParams params;
-  // TODO: LZ77で時間がかかり、オフにしても決定木比較に影響ないならば、 kNone
-  // にしたい
+  // TODO:
+  // LZ77で時間がかかり、オフにしても決定木比較に影響ないならば、kNoneにしたい
   params.lz77_method = HistogramParams::LZ77Method::kOptimal;
   params.image_widths = std::move(image_widths);
   EntropyEncodingData code;
@@ -89,11 +91,11 @@ size_t ComputeEncodedBits(const Image &image, const ModularOptions &options,
 
 }  // namespace
 
-Graph CreateGraphWithDifferentTree(ImagesProvider &images,
-                                   const jxl::ModularOptions &options,
-                                   ProgressReporter *progress) {
+BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
+    ImagesProvider &images, const jxl::ModularOptions &options,
+    ProgressReporter *progress) {
   const size_t n_images = images.size();
-  const size_t n_edges = n_images * n_images;
+  const size_t n_edges = n_images * (n_images - 1);
   const size_t n_jobs = n_edges + n_images;
   std::atomic_size_t completed_jobs = 0;
 
@@ -106,100 +108,79 @@ Graph CreateGraphWithDifferentTree(ImagesProvider &images,
   });
 
   // グラフを作成する
-  std::vector<std::pair<Graph::vertex_descriptor, Graph::vertex_descriptor>>
-      edges(n_edges);
-  std::vector<float> costs(n_edges);
+  std::vector<size_t> self_costs(n_images);
+  std::vector<std::pair<G::vertex_descriptor, G::vertex_descriptor>> edges(
+      n_edges);
+  std::vector<size_t> costs(n_edges);
 
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
-    size_t dst_idx = n_images * i;
+    size_t dst_idx = (n_images - 1) * i;
     auto img_lhs = images.get(i);
     const auto &tree_lhs = learned_trees[i];
 
     // 自分自身の決定木で圧縮した場合
-    edges[dst_idx] = {0, i + 1};
-    costs[dst_idx] =
+    self_costs[i] =
         tree_lhs.n_bits + ComputeEncodedBits(img_lhs, options, tree_lhs.tree);
-
-    completed_jobs++;
-    if (progress) progress->report(completed_jobs, n_jobs);
 
     // この決定木で他の画像を圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
       if (i == j) continue;
 
       auto img_rhs = images.get(j);
-      edges[++dst_idx] = {i + 1, j + 1};
+      edges[dst_idx] = {i, j};
       costs[dst_idx] = ComputeEncodedBits(img_rhs, options, tree_lhs.tree);
+      dst_idx++;
 
       completed_jobs++;
       if (progress) progress->report(completed_jobs, n_jobs);
     }
 
-    JXL_ASSERT(dst_idx == n_images * (i + 1) - 1);
+    JXL_ASSERT(dst_idx == (n_images - 1) * (i + 1));
   });
 
   JXL_ASSERT(completed_jobs == n_jobs);
 
-  Graph g(edges.begin(), edges.end(), costs.begin(), n_images + 1);
-
-  // ノード名を付与
-  auto vn = get(boost::vertex_name_t(), g);
-  put(vn, 0, "root");
-  for (size_t i = 0; i < n_images; i++) put(vn, i + 1, images.get_label(i));
-
-  return g;
+  return {std::move(self_costs),
+          G(edges.begin(), edges.end(), costs.begin(), n_images)};
 }
 
-std::shared_ptr<ImageTree> CreateMstWithDifferentTree(
+std::shared_ptr<ImageTree<size_t>> CreateMstWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
   const size_t n_images = images.size();
-  auto graph = CreateGraphWithDifferentTree(images, options, progress);
-  JXL_ASSERT(num_vertices(graph) == n_images + 1);
+  auto gr = CreateGraphWithDifferentTree(images, options, progress);
+  auto &g = gr.graph;
+  JXL_ASSERT(gr.self_costs.size() == n_images);
+  JXL_ASSERT(num_vertices(g) == n_images);
 
-  // 1枚ずつ圧縮したときにもっとも小さくなる画像を探す
-  float min_cost = std::numeric_limits<float>::infinity();
-  std::array<Graph::vertex_descriptor, 1> roots = {0};
-  auto ew = get(boost::edge_weight_t(), graph);
-  while (true) {
-    auto es = out_edges(0, graph);
-    if (es.first == es.second) break;
-
-    float cost = get(ew, *es.first);
-    if (cost < min_cost) {
-      min_cost = cost;
-      roots[0] = target(*es.first, graph);
-    }
-
-    // 頂点0からの辺は使わないので消す
-    remove_edge(es.first, graph);
-  }
-
-  JXL_ASSERT(roots[0] != 0);
+  // 1枚ずつ圧縮したときにもっとも小さくなる画像を根とする
+  std::array<G::vertex_descriptor, 1> roots = {static_cast<size_t>(
+      std::min_element(gr.self_costs.cbegin(), gr.self_costs.cend()) -
+      gr.self_costs.cbegin())};
 
   // 有向MST
-  std::vector<Graph::edge_descriptor> edges;
+  std::vector<G::edge_descriptor> edges;
   edges.reserve(n_images);
   edmonds_optimum_branching<false, true, true>(
-      graph, get(boost::vertex_index_t(), graph),
-      get(boost::edge_weight_t(), graph), roots.begin(), roots.end(),
-      std::back_inserter(edges));
+      g, get(boost::vertex_index_t(), g), get(boost::edge_weight_t(), g),
+      roots.begin(), roots.end(), std::back_inserter(edges));
 
-  std::vector<std::shared_ptr<ImageTree>> tree_nodes;
+  std::vector<std::shared_ptr<ImageTree<size_t>>> tree_nodes;
   tree_nodes.reserve(n_images);
   for (size_t i = 0; i < n_images; i++)
-    tree_nodes.emplace_back(new ImageTree{.image_idx = i});
+    tree_nodes.emplace_back(
+        new ImageTree<size_t>{.image_idx = i, .self_cost = gr.self_costs[i]});
 
   for (auto &e : edges) {
-    auto &src = tree_nodes.at(source(e, graph) - 1);
-    auto &tgt = tree_nodes.at(target(e, graph) - 1);
+    auto &src = tree_nodes.at(source(e, g));
+    auto &tgt = tree_nodes.at(target(e, g));
     src->children.push_back(tgt);
-    src->costs.push_back(get(boost::edge_weight_t(), graph, e));
+    src->costs.push_back(get(boost::edge_weight_t(), g, e));
     JXL_ASSERT(!tgt->parent);  // parent must be null
     tgt->parent = src;
   }
 
-  return tree_nodes.at(roots[0] - 1);
+  return tree_nodes.at(roots[0]);
 }
 
 }  // namespace research

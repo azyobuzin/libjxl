@@ -12,8 +12,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 
 # 共通ライブラリ
 add_library(research STATIC EXCLUDE_FROM_ALL
-  cost_graph.cc
   cost_graph_enc.cc
+  enc_brute_force.cc
+  enc_jxl_multi.cc
   images_provider.cc
   progress.cc
   prop_extract.cc
@@ -25,6 +26,9 @@ target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmon
 # Executables
 add_executable(cost_graph_enc cost_graph_enc_main.cc)
 target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
+
+add_executable(enc_brute_force enc_brute_force_main.cc)
+target_link_libraries(enc_brute_force research ${Boost_LIBRARIES})
 
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})

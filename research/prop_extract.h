@@ -26,7 +26,7 @@ struct SamplesForQuantization {
 };
 
 // gradient, W-NW, NW-N, N-NE, N-NN (from splitting_heuristics_properties)
-const uint32_t PROPS_TO_USE[] = {9, 10, 11, 12, 13};
+const uint32_t kPropsToUse[] = {9, 10, 11, 12, 13};
 
 // プロパティ値の量子化に使用するヒストグラムの材料を収集
 SamplesForQuantization CollectSamplesForQuantization(

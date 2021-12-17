@@ -2,23 +2,36 @@
 #include <boost/program_options.hpp>
 #include <iostream>
 
-#include "cost_graph.h"
+#include "cost_graph_util.h"
 
 namespace po = boost::program_options;
 
 using namespace research;
 
-static Graph CreateGraph(ImagesProvider &images,
-                              const jxl::ModularOptions &options) {
+namespace {
+
+BidirectionalCostGraph<size_t> CreateGraph(ImagesProvider &images,
+                                           const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
-  return CreateGraphWithDifferentTree(images, options, &progress);
+  return CreateGraphWithDifferentTree(images, options, &progress).graph;
 }
 
-static std::shared_ptr<ImageTree> CreateTree(
+std::shared_ptr<ImageTree<size_t>> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
   return CreateMstWithDifferentTree(images, options, &progress);
 }
+
+struct ImageVertexLabelWriter {
+  ImagesProvider &images;
+
+  void operator()(std::ostream &out, size_t vertex_idx) const {
+    out << "[label=" << boost::escape_dot_string(images.get_label(vertex_idx))
+        << "]";
+  }
+};
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
   po::options_description pos_ops;
@@ -76,10 +89,8 @@ int main(int argc, char *argv[]) {
     PrintImageTreeDot(std::cout, tree, &images);
   } else {
     auto graph = CreateGraph(images, options);
-
     boost::write_graphviz(
-        std::cout, graph,
-        boost::make_label_writer(get(boost::vertex_name_t(), graph)),
+        std::cout, graph, ImageVertexLabelWriter{images},
         boost::make_label_writer(get(boost::edge_weight_t(), graph)));
   }
 

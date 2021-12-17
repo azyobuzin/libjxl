@@ -12,7 +12,7 @@ using namespace jxl;
 
 namespace research {
 
-std::string ImagesProvider::get_label(size_t idx) {
+std::string ImagesProvider::get_label(size_t idx) const {
   return fmt::format("{}", idx);
 }
 
@@ -29,7 +29,7 @@ Image FileImagesProvider::get(size_t idx) {
   return img;
 }
 
-std::string FileImagesProvider::get_label(size_t idx) {
+std::string FileImagesProvider::get_label(size_t idx) const {
   return std::filesystem::path(paths.at(idx)).stem().string();
 }
 

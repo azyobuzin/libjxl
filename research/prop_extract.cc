@@ -4,6 +4,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_reduce.h>
 
+#include <execution>
 #include <random>
 
 #include "lib/jxl/base/printf_macros.h"
@@ -175,8 +176,9 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     if (!use_all_pixels) {
       std::sample(points.cbegin(), points.cend(), sampling_points.begin(),
                   n_pixels_to_sample, engine);
-      std::sort(sampling_points.begin(), sampling_points.end());
     }
+    JXL_DASSERT(
+        std::is_sorted(sampling_points.cbegin(), sampling_points.cend()));
     auto next_px = sampling_points.cbegin();
 
     tree_samples.PrepareForSamples(n_pixels_to_sample);
