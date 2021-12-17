@@ -1,3 +1,5 @@
+#pragma once
+
 #include "cost_graph.h"
 #include "enc.h"
 

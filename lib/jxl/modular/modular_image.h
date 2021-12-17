@@ -97,7 +97,7 @@ class Image {
   Image& operator=(Image&& other) noexcept;
   Image(Image&& other) noexcept = default;
 
-  Image clone();
+  Image clone() const;
 
   void undo_transforms(const weighted::Header& wp_header,
                        jxl::ThreadPool* pool = nullptr);

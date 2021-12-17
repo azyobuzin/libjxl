@@ -136,25 +136,27 @@ static bool IsPrintEntropyEnabled() {
   return print_entropy_enabled.value();
 }
 
-static void PrintDecodeEntropy(const DecodingRect *rect, pixel_type chan, size_t x, size_t y, double entropy) {
+static void PrintDecodeEntropy(const DecodingRect *rect, pixel_type chan,
+                               size_t x, size_t y, double entropy) {
   if (rect == nullptr) return;
 
   if (IsPrintEntropyEnabled()) {
-    printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS ",%f\n", rect->where, chan, rect->frame_idx, rect->ybegin + y, rect->xbegin + x, entropy);
+    printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS
+           ",%f\n",
+           rect->where, chan, rect->frame_idx, rect->ybegin + y,
+           rect->xbegin + x, entropy);
   }
 }
 
-#define READ_WITH_ENTROPY(ctx, br) ( \
-  ve = reader->ReadHybridUintClusteredWithEntropy(ctx, br), \
-  PrintDecodeEntropy(rect, chan, x, y, ve.entropy), \
-  ve.value)
+#define READ_WITH_ENTROPY(ctx, br)                           \
+  (ve = reader->ReadHybridUintClusteredWithEntropy(ctx, br), \
+   PrintDecodeEntropy(rect, chan, x, y, ve.entropy), ve.value)
 
 Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const std::vector<uint8_t> &context_map,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
-                                 pixel_type chan, size_t group_id,
-                                 Image *image,
+                                 pixel_type chan, size_t group_id, Image *image,
                                  const DecodingRect *rect) {
   Channel &channel = image->channel[chan];
 
@@ -215,7 +217,10 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
           if (rect && IsPrintEntropyEnabled()) {
             for (size_t x = 0; x < channel.w; x++)
-              printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS ",%" PRIuS ",0\n", rect->where, chan, rect->frame_idx, rect->ybegin + y, rect->xbegin + x);
+              printf("Decode Entropy: %s,%" PRId32 ",%" PRIuS ",%" PRIuS
+                     ",%" PRIuS ",0\n",
+                     rect->where, chan, rect->frame_idx, rect->ybegin + y,
+                     rect->xbegin + x);
           }
         }
 
@@ -352,7 +357,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, *image, chan, &references);
+      // TODO(research): Support multi
+      PrecomputeReferences(channel, y, *image, chan,
+                           std::numeric_limits<size_t>::max(), {}, &references);
       InitPropsRow(&properties, static_props, y);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
@@ -372,7 +379,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
-      PrecomputeReferences(channel, y, *image, chan, &references);
+      // TODO(research): Support multi
+      PrecomputeReferences(channel, y, *image, chan,
+                           std::numeric_limits<size_t>::max(), {}, &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
             PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
@@ -416,8 +425,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                      size_t group_id, ModularOptions *options,
                      const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map,
-                     bool allow_truncated_group,
-                     const DecodingRect *rect) {
+                     bool allow_truncated_group, const DecodingRect *rect) {
   if (image.channel.empty()) return true;
 
   // decode transforms
@@ -526,8 +534,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
                                 ModularOptions *options,
-                                const DecodingRect *rect,
-                                bool undo_transforms,
+                                const DecodingRect *rect, bool undo_transforms,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {

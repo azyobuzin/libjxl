@@ -144,7 +144,7 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     }
   }
 
-  std::random_device seed_gen;  // TODO: シードを固定できるようにする
+  std::random_device seed_gen;  // TODO(research): シードを固定できるようにする
   std::mt19937 engine{seed_gen()};
   std::vector<PointYX> sampling_points(n_pixels_to_sample);
   if (use_all_pixels) sampling_points = points;
@@ -195,7 +195,8 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     while (next_px != sampling_points.cend()) {
       size_t y = next_px->first;
       const pixel_type *p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, i, &references);
+      PrecomputeReferences(channel, y, image, i, options.max_properties, {},
+                           &references);
       InitPropsRow(&properties, static_props, y);
 
       for (; next_px != sampling_points.cend() && next_px->first == y;

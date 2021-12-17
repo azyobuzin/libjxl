@@ -1,3 +1,5 @@
+#pragma once
+
 #include <tbb/spin_mutex.h>
 
 #include <atomic>

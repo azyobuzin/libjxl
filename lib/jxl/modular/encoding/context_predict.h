@@ -324,6 +324,11 @@ class MATreeLookup {
   const FlatTree &nodes_;
 };
 
+struct MultiOptions {
+  size_t channel_per_image;
+  size_t max_refs;
+};
+
 static constexpr size_t kExtraPropsPerChannel = 4;
 static constexpr size_t kNumNonrefProperties =
     kNumStaticProperties + 13 + weighted::kNumProperties;
@@ -360,22 +365,20 @@ inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {
 
 inline void PrecomputeReferences(const Channel &ch, size_t y,
                                  const Image &image, uint32_t i,
+                                 size_t n_refchan /* max_properties */,
+                                 const MultiOptions &multi_options,
                                  Channel *references) {
   ZeroFillImage(&references->plane);
   uint32_t offset = 0;
   size_t num_extra_props = references->w;
   intptr_t onerow = references->plane.PixelsPerRow();
-  for (int32_t j = static_cast<int32_t>(i) - 1;
-       j >= 0 && offset < num_extra_props; j--) {
-    if (image.channel[j].w != image.channel[i].w ||
-        image.channel[j].h != image.channel[i].h) {
-      continue;
-    }
-    if (image.channel[j].hshift != image.channel[i].hshift) continue;
-    if (image.channel[j].vshift != image.channel[i].vshift) continue;
+
+  auto compute = [&](size_t refchan) {
+    JXL_ASSERT(refchan < image.channel.size());
     pixel_type *JXL_RESTRICT rp = references->Row(0) + offset;
-    const pixel_type *JXL_RESTRICT rpp = image.channel[j].Row(y);
-    const pixel_type *JXL_RESTRICT rpprev = image.channel[j].Row(y ? y - 1 : 0);
+    const pixel_type *JXL_RESTRICT rpp = image.channel[refchan].Row(y);
+    const pixel_type *JXL_RESTRICT rpprev =
+        image.channel[refchan].Row(y ? y - 1 : 0);
     for (size_t x = 0; x < ch.w; x++, rp += onerow) {
       pixel_type_w v = rpp[x];
       rp[0] = std::abs(v);
@@ -387,6 +390,42 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
       rp[2] = std::abs(v - vpredicted);
       rp[3] = v - vpredicted;
     }
+  };
+
+  if (i >= image.nb_meta_channels) {
+    size_t img_chan_idx =
+        (i - image.nb_meta_channels) % multi_options.channel_per_image;
+    size_t n_actual_refchan = std::min(img_chan_idx, n_refchan);
+
+    for (uint32_t j = 0; j < n_actual_refchan; j++) {
+      offset = j * kExtraPropsPerChannel;
+      if (offset >= num_extra_props) return;
+      compute(i - j);
+    }
+
+    size_t n_other_image_chan = std::min(img_chan_idx, multi_options.max_refs) *
+                                multi_options.channel_per_image;
+    for (size_t j = 0; j < n_other_image_chan; j++) {
+      // img_chan_idx に関わらず n_refchan を使った offset にする
+      offset = (n_refchan + j) * kExtraPropsPerChannel;
+      if (offset >= num_extra_props) return;
+      compute(i - n_actual_refchan - j);
+    }
+
+    return;
+  }
+
+  // 以下 従来実装
+
+  for (int32_t j = static_cast<int32_t>(i) - 1;
+       j >= 0 && offset < num_extra_props; j--) {
+    if (image.channel[j].w != image.channel[i].w ||
+        image.channel[j].h != image.channel[i].h) {
+      continue;
+    }
+    if (image.channel[j].hshift != image.channel[i].hshift) continue;
+    if (image.channel[j].vshift != image.channel[i].vshift) continue;
+    compute(j);
 
     offset += kExtraPropsPerChannel;
   }

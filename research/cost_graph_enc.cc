@@ -2,6 +2,7 @@
 
 #include "cost_graph.h"
 #include "edmonds_optimum_branching.hpp"
+#include "enc_jxl_multi.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 
@@ -18,74 +19,16 @@ struct LearnedTree {
   size_t n_bits;
 };
 
-LearnedTree LearnTree(const Image &image, const ModularOptions &options) {
-  TreeSamples tree_samples;
-  if (!tree_samples.SetPredictor(options.predictor, options.wp_tree_mode))
-    JXL_ABORT("SetPredictor failed");
-
-  if (!tree_samples.SetProperties(options.splitting_heuristics_properties,
-                                  options.wp_tree_mode))
-    JXL_ABORT("SetProperty failed");
-
-  std::vector<pixel_type> pixel_samples;
-  std::vector<pixel_type> diff_samples;
-  std::vector<uint32_t> group_pixel_count;
-  std::vector<uint32_t> channel_pixel_count;
-  CollectPixelSamples(image, options, 0, group_pixel_count, channel_pixel_count,
-                      pixel_samples, diff_samples);
-
-  StaticPropRange range;
-  range[0] = {{0, static_cast<uint32_t>(image.channel.size())}};
-  range[1] = {{0, 1}}; // group id
-  std::vector<ModularMultiplierInfo> multiplier_info;
-  tree_samples.PreQuantizeProperties(range, multiplier_info, group_pixel_count,
-                                     channel_pixel_count, pixel_samples,
-                                     diff_samples, options.max_property_values);
-
-  size_t total_pixels = 0;
-  JXL_CHECK(ModularGenericCompress(image, options, nullptr, nullptr, 0, 0,
-                                   &tree_samples, &total_pixels));
-
-  Tree tree = LearnTree(std::move(tree_samples), total_pixels, options,
-                        multiplier_info, range);
-
-  std::vector<std::vector<Token>> tokens(1);
-  Tree decoded_tree;
-  TokenizeTree(tree, &tokens[0], &decoded_tree);
-
+LearnedTree LearnTree(Image image, const ModularOptions &options) {
   BitWriter writer;
-  HistogramParams params;
-  params.lz77_method = HistogramParams::LZ77Method::kOptimal;
-  EntropyEncodingData code;
-  std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(params, kNumTreeContexts, tokens, &code,
-                           &context_map, &writer, kLayerModularTree, nullptr);
-  WriteTokens(tokens[0], code, context_map, &writer, kLayerModularTree,
-              nullptr);
-
-  return {decoded_tree, writer.BitsWritten()};
+  Tree tree = LearnTree(writer, CombineImage(std::move(image)), options, 0);
+  return {tree, writer.BitsWritten()};
 }
 
-size_t ComputeEncodedBits(const Image &image, const ModularOptions &options,
+size_t ComputeEncodedBits(Image image, const ModularOptions &options,
                           const Tree &tree) {
-  std::vector<std::vector<Token>> tokens(1);
-  std::vector<size_t> image_widths(1);
-  JXL_CHECK(ModularGenericCompress(image, options, nullptr, nullptr, 0, 0,
-                                   nullptr, nullptr, &tree, nullptr, &tokens[0],
-                                   &image_widths[0]));
-
   BitWriter writer;
-  HistogramParams params;
-  // TODO:
-  // LZ77で時間がかかり、オフにしても決定木比較に影響ないならば、kNoneにしたい
-  params.lz77_method = HistogramParams::LZ77Method::kOptimal;
-  params.image_widths = std::move(image_widths);
-  EntropyEncodingData code;
-  std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens, &code,
-                           &context_map, &writer, 0, nullptr);
-  WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
-
+  EncodeImages(writer, CombineImage(std::move(image)), options, 0, tree);
   return writer.BitsWritten();
 }
 
@@ -119,16 +62,18 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
     const auto &tree_lhs = learned_trees[i];
 
     // 自分自身の決定木で圧縮した場合
-    self_costs[i] =
-        tree_lhs.n_bits + ComputeEncodedBits(img_lhs, options, tree_lhs.tree);
+    self_costs[i] = tree_lhs.n_bits +
+                    ComputeEncodedBits(img_lhs.clone(), options, tree_lhs.tree);
 
     // この決定木で他の画像を圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
       if (i == j) continue;
 
-      auto img_rhs = images.get(j);
+      // TODO(research):
+      // ディスクから画像を読みだしてデコードする回数を減らしたい
       edges[dst_idx] = {i, j};
-      costs[dst_idx] = ComputeEncodedBits(img_rhs, options, tree_lhs.tree);
+      costs[dst_idx] =
+          ComputeEncodedBits(images.get(j), options, tree_lhs.tree);
       dst_idx++;
 
       completed_jobs++;

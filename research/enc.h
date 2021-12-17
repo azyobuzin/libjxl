@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 
 #include "lib/jxl/base/padded_bytes.h"

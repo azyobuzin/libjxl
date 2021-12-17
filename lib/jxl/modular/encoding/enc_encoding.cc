@@ -67,6 +67,7 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
 }  // namespace
 
 void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
+                    const MultiOptions &multi_options,
                     const weighted::Header &wp_header,
                     const ModularOptions &options, TreeSamples &tree_samples,
                     size_t *total_pixels) {
@@ -77,8 +78,11 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
       {chan, (int)group_id}};
-  Properties properties(kNumNonrefProperties +
-                        kExtraPropsPerChannel * options.max_properties);
+  Properties properties(
+      kNumNonrefProperties +
+      kExtraPropsPerChannel *
+          (options.max_properties +
+           multi_options.channel_per_image * multi_options.max_refs));
   double pixel_fraction = std::min(1.0f, options.nb_repeats);
   // a fraction of 0 is used to disable learning entirely.
   if (pixel_fraction > 0) {
@@ -106,7 +110,8 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
   for (size_t y = 0; y < channel.h; y++) {
     const pixel_type *JXL_RESTRICT p = channel.Row(y);
-    PrecomputeReferences(channel, y, image, chan, &references);
+    PrecomputeReferences(channel, y, image, chan, options.max_properties,
+                         multi_options, &references);
     InitPropsRow(&properties, static_props, y);
     // TODO(veluca): avoid computing WP if we don't use its property or
     // predictions.
@@ -161,6 +166,8 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
 }
 
 Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
+                                 size_t n_refchan,
+                                 const MultiOptions &multi_options,
                                  const weighted::Header &wp_header,
                                  const Tree &global_tree,
                                  std::vector<Token> *tokens, AuxOut *aux_out,
@@ -314,7 +321,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, chan, &references);
+      PrecomputeReferences(channel, y, image, chan, n_refchan, multi_options,
+                           &references);
       float *pred_img_row[3];
       if (kWantDebug) {
         for (size_t c = 0; c < 3; c++) {
@@ -343,7 +351,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, chan, &references);
+      PrecomputeReferences(channel, y, image, chan, n_refchan, multi_options,
+                           &references);
       float *pred_img_row[3];
       if (kWantDebug) {
         for (size_t c = 0; c < 3; c++) {
@@ -377,11 +386,11 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 }
 
 Status ModularEncode(const Image &image, const ModularOptions &options,
-                     BitWriter *writer, AuxOut *aux_out, size_t layer,
-                     size_t group_id, TreeSamples *tree_samples,
-                     size_t *total_pixels, const Tree *tree,
-                     GroupHeader *header, std::vector<Token> *tokens,
-                     size_t *width) {
+                     const MultiOptions &multi_options, BitWriter *writer,
+                     AuxOut *aux_out, size_t layer, size_t group_id,
+                     TreeSamples *tree_samples, size_t *total_pixels,
+                     const Tree *tree, GroupHeader *header,
+                     std::vector<Token> *tokens, size_t *width) {
   if (image.error) return JXL_FAILURE("Invalid image");
   size_t nb_channels = image.channel.size();
   JXL_DEBUG_V(
@@ -440,9 +449,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
            image.channel[i].h > options.max_chan_size)) {
         break;
       }
-      GatherTreeData(image, i, group_id, header->wp_header, options,
-                     gather_data ? *tree_samples : tree_samples_storage,
-                     total_pixels);
+      GatherTreeData(
+          image, i, group_id, multi_options, header->wp_header, options,
+          gather_data ? *tree_samples : tree_samples_storage, total_pixels);
     }
     if (gather_data) return true;
   }
@@ -494,8 +503,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      {0, 0});
     } else {
       JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
-          image, i, header->wp_header, *tree, tokens, aux_out, group_id,
-          options.skip_encoder_fast_path));
+          image, i, options.max_properties, multi_options, header->wp_header,
+          *tree, tokens, aux_out, group_id, options.skip_encoder_fast_path));
     }
   }
 
@@ -529,9 +538,9 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
   }
 
   size_t bits = writer ? writer->BitsWritten() : 0;
-  JXL_RETURN_IF_ERROR(ModularEncode(image, options, writer, aux_out, layer,
-                                    group_id, tree_samples, total_pixels, tree,
-                                    header, tokens, width));
+  JXL_RETURN_IF_ERROR(ModularEncode(
+      image, options, /*multi_options=*/{}, writer, aux_out, layer, group_id,
+      tree_samples, total_pixels, tree, header, tokens, width));
   bits = writer ? writer->BitsWritten() - bits : 0;
   if (writer) {
     JXL_DEBUG_V(4,
@@ -545,3 +554,19 @@ Status ModularGenericCompress(const Image &image, const ModularOptions &opts,
 }
 
 }  // namespace jxl
+
+namespace research {
+
+jxl::Status ModularEncodeMulti(
+    const jxl::Image &image, const jxl::ModularOptions &options,
+    const jxl::MultiOptions &multi_options, jxl::BitWriter *writer,
+    jxl::AuxOut *aux_out, size_t layer, size_t group_id,
+    jxl::TreeSamples *tree_samples, size_t *total_pixels, const jxl::Tree *tree,
+    jxl::GroupHeader *header, std::vector<jxl::Token> *tokens, size_t *width) {
+  JXL_CHECK(options.predictor != static_cast<jxl::Predictor>(-1));
+  return ModularEncode(image, options, multi_options, writer, aux_out, layer,
+                       group_id, tree_samples, total_pixels, tree, header,
+                       tokens, width);
+}
+
+}  // namespace research

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <optional>
 
 #include "lib/jxl/modular/modular_image.h"

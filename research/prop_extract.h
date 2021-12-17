@@ -1,5 +1,7 @@
 // 画像からプロパティ値をサンプリングする
 
+#pragma once
+
 #include <string>
 #include <vector>
 
