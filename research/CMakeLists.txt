@@ -35,3 +35,5 @@ target_link_libraries(prop_extract research ${Boost_LIBRARIES})
 
 add_executable(prop_kmeans prop_kmeans_main.cc)
 target_link_libraries(prop_kmeans research ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES})
+
+add_custom_target(research_exe ALL DEPENDS cost_graph_enc enc_brute_force prop_extract prop_kmeans)

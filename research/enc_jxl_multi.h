@@ -19,7 +19,7 @@ struct CombinedImage {
 CombinedImage CombineImage(jxl::Image &&image);
 
 CombinedImage CombineImage(
-    const std::vector<std::shared_ptr<jxl::Image>> &images);
+    const std::vector<std::shared_ptr<const jxl::Image>> &images);
 
 jxl::Tree LearnTree(jxl::BitWriter &writer, const CombinedImage &image,
                     const jxl::ModularOptions &options, size_t max_refs);

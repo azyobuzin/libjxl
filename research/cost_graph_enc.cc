@@ -35,17 +35,21 @@ size_t ComputeEncodedBits(Image image, const ModularOptions &options,
 }  // namespace
 
 BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
-    ImagesProvider &images, const jxl::ModularOptions &options,
+    ImagesProvider &ip, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
-  const size_t n_images = images.size();
+  const size_t n_images = ip.size();
   const size_t n_edges = n_images * (n_images - 1);
   const size_t n_jobs = n_edges + n_images;
   std::atomic_size_t completed_jobs = 0;
 
+  // クラスタ単位はメモリにすべて乗り切る前提で
+  std::vector<Image> images(n_images);
+
   // すべての決定木学習を行う
   std::vector<LearnedTree> learned_trees(n_images);
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
-    learned_trees[i] = LearnTree(images.get(i), options);
+    images[i] = ip.get(i);
+    learned_trees[i] = LearnTree(images[i].clone(), options);
     completed_jobs++;
     if (progress) progress->report(completed_jobs, n_jobs);
   });
@@ -58,22 +62,20 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
 
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
     size_t dst_idx = (n_images - 1) * i;
-    auto img_lhs = images.get(i);
     const auto &tree_lhs = learned_trees[i];
 
     // 自分自身の決定木で圧縮した場合
-    self_costs[i] = tree_lhs.n_bits +
-                    ComputeEncodedBits(img_lhs.clone(), options, tree_lhs.tree);
+    self_costs[i] =
+        tree_lhs.n_bits +
+        ComputeEncodedBits(images[i].clone(), options, tree_lhs.tree);
 
     // この決定木で他の画像を圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
       if (i == j) continue;
 
-      // TODO(research):
-      // ディスクから画像を読みだしてデコードする回数を減らしたい
       edges[dst_idx] = {i, j};
       costs[dst_idx] =
-          ComputeEncodedBits(images.get(j), options, tree_lhs.tree);
+          ComputeEncodedBits(images[j].clone(), options, tree_lhs.tree);
       dst_idx++;
 
       completed_jobs++;

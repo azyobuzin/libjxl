@@ -392,7 +392,9 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     }
   };
 
-  if (i >= image.nb_meta_channels) {
+  // channnel_per_image == 0 なら multi
+  // 機能を一切使わないということで、従来実装へ
+  if (multi_options.channel_per_image > 0 && i >= image.nb_meta_channels) {
     size_t img_chan_idx =
         (i - image.nb_meta_channels) % multi_options.channel_per_image;
     size_t n_actual_refchan = std::min(img_chan_idx, n_refchan);
@@ -400,16 +402,18 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     for (uint32_t j = 0; j < n_actual_refchan; j++) {
       offset = j * kExtraPropsPerChannel;
       if (offset >= num_extra_props) return;
-      compute(i - j);
+      compute(i - 1 - j);
     }
 
-    size_t n_other_image_chan = std::min(img_chan_idx, multi_options.max_refs) *
-                                multi_options.channel_per_image;
+    size_t n_other_image_chan =
+        std::min((i - image.nb_meta_channels) / multi_options.channel_per_image,
+                 multi_options.max_refs) *
+        multi_options.channel_per_image;
     for (size_t j = 0; j < n_other_image_chan; j++) {
       // img_chan_idx に関わらず n_refchan を使った offset にする
       offset = (n_refchan + j) * kExtraPropsPerChannel;
       if (offset >= num_extra_props) return;
-      compute(i - n_actual_refchan - j);
+      compute(i - 1 - n_actual_refchan - j);
     }
 
     return;

@@ -1,5 +1,6 @@
 #include "enc_jxl_multi.h"
 
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 
@@ -17,7 +18,7 @@ CombinedImage CombineImage(Image &&image) {
   return {std::forward<Image>(image), 1};
 }
 
-CombinedImage CombineImage(const std::vector<std::shared_ptr<Image>> &images) {
+CombinedImage CombineImage(const std::vector<std::shared_ptr<const Image>> &images) {
   JXL_CHECK(images.size() > 0);
   const Image &first_image = *images[0];
 
@@ -36,12 +37,9 @@ CombinedImage CombineImage(const std::vector<std::shared_ptr<Image>> &images) {
 
   for (size_t i = 0; i < images.size(); i++) {
     for (size_t j = 0; j < first_image.channel.size(); j++) {
-      Channel &src = images[i]->channel.at(j);
+      const Channel &src = images[i]->channel.at(j);
       Channel &dst = image.channel.at(i * first_image.channel.size() + j);
-      for (size_t y = 0; y < first_image.h; y++) {
-        pixel_type *src_row = src.Row(y);
-        std::copy(src_row, src_row + first_image.w, dst.Row(y));
-      }
+      CopyImageTo(src.plane, &dst.plane);
     }
   }
 
