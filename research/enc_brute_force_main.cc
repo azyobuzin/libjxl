@@ -101,6 +101,8 @@ int main(int argc, char *argv[]) {
 
   if (!vm["out-dir"].empty()) {
     const auto &out_dir = vm["out-dir"].as<fs::path>();
+    fs::create_directories(out_dir);
+
     for (size_t i = 0; i < results.size(); i++) {
       const auto &data = results[i].data;
       fs::path p = out_dir / fmt::format("{}.bin", i);

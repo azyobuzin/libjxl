@@ -33,17 +33,23 @@ EncodedImages ComputeEncodedBits(
           std::move(writer).TakeBytes(), n_bits};
 }
 
-// TODO: CreateEncodingTree に時間がかかるので、進捗表示の改善が必要。あと並列化
-
 // MSTをとりあえず1枚ずつ圧縮した形式にする
 std::shared_ptr<EncodingTree> CreateEncodingTree(
     std::shared_ptr<const ImageTree<size_t>> root, ImagesProvider &images,
-    const jxl::ModularOptions &options) {
-  std::shared_ptr<EncodingTree> result_root(new EncodingTree{
-      ComputeEncodedBits(
-          {std::make_shared<const jxl::Image>(images.get(root->image_idx))},
-          {root->image_idx}, options, 0),
+    const jxl::ModularOptions &options, ProgressReporter *progress) {
+  std::atomic_size_t n_completed = 0;
+  std::vector<EncodedImages> encoded_data(images.size());
+
+  // 圧縮結果を用意する
+  // 後ですべて使うので並列にやっておく
+  tbb::parallel_for(size_t(0), encoded_data.size(), [&](size_t i) {
+    encoded_data[i] = ComputeEncodedBits(
+        {std::make_shared<const jxl::Image>(images.get(i))}, {i}, options, 0);
+    if (progress) progress->report(++n_completed, encoded_data.size() * 2);
   });
+
+  std::shared_ptr<EncodingTree> result_root(
+      new EncodingTree{std::move(encoded_data.at(root->image_idx))});
 
   std::stack<std::pair<std::shared_ptr<const ImageTree<size_t>>,
                        std::shared_ptr<EncodingTree>>>
@@ -67,10 +73,7 @@ std::shared_ptr<EncodingTree> CreateEncodingTree(
     for (const auto &[cost, i] : costs) {
       const auto &child = src_node->children[i];
       auto &new_node = dst_node->children.emplace_back(new EncodingTree{
-          ComputeEncodedBits({std::make_shared<const jxl::Image>(
-                                 images.get(child->image_idx))},
-                             {child->image_idx}, options, 0),
-          dst_node});
+          std::move(encoded_data.at(child->image_idx)), dst_node});
       stack.push({child, new_node});
     }
   }
@@ -123,16 +126,20 @@ struct Traverse {
         node->images = std::move(combined_bits);
       } else {
         // 効果がないので、単独で出力
+        n_completed += child->images.image_indices.size();
         results.push_back(std::move(child->images));
+        progress->report(n_completed + n_images, n_images * 2);
       }
     }
 
     node->children.clear();
 
     // 根ならばこれ以上戻れないので出力
-    if (!node->parent) results.push_back(std::move(node->images));
-
-    if (progress) progress->report(++n_completed, n_images);
+    if (!node->parent) {
+      n_completed += node->images.image_indices.size();
+      results.push_back(std::move(node->images));
+      progress->report(n_completed + n_images, n_images * 2);
+    }
   }
 };
 
@@ -143,7 +150,7 @@ std::vector<EncodedImages> EncodeWithBruteForce(
     const jxl::ModularOptions &options, size_t max_refs,
     ProgressReporter *progress) {
   Traverse traverse(images.size(), options, max_refs, progress);
-  traverse(CreateEncodingTree(root, images, options));
+  traverse(CreateEncodingTree(root, images, options, progress));
 
   std::vector<EncodedImages> results;
   results.reserve(traverse.results.size());
