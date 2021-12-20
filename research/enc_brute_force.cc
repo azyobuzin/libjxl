@@ -111,7 +111,7 @@ struct Traverse {
       JXL_ASSERT(child->children.empty());
 
       // node に child を結合した場合に、圧縮率が改善するか試す
-      // TODO: 最後は並列化が効かなくなって、すごく遅い
+      // TODO(research): 最後は並列化が効かなくなって、すごく遅い
       auto images = node->images.included_images;
       images.insert(images.end(), child->images.included_images.cbegin(),
                     child->images.included_images.cend());
