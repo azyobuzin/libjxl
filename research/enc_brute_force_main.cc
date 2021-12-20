@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
+    ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("out-dir", po::value<fs::path>(), "圧縮結果の出力先");
   // clang-format on
@@ -70,6 +71,7 @@ int main(int argc, char *argv[]) {
   // Tortoise相当
   jxl::ModularOptions options{
       .nb_repeats = vm["fraction"].as<float>(),
+      .max_properties = vm["refchan"].as<uint16_t>(),
       .splitting_heuristics_properties = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3,
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
@@ -111,8 +113,14 @@ int main(int argc, char *argv[]) {
         std::cerr << "Failed to open " << p.string() << std::endl;
         return 1;
       }
-      fwrite(data.data(), 1, data.size(), fp);
+
+      auto n_written = fwrite(data.data(), 1, data.size(), fp);
       fclose(fp);
+
+      if (n_written != data.size()) {
+        std::cerr << "Failed to write " << p.string() << std::endl;
+        return 1;
+      }
     }
   }
 

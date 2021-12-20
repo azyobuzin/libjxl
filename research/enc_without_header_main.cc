@@ -86,13 +86,16 @@ int main(int argc, char *argv[]) {
     auto span = writer.GetSpan();
     fs::path p = out_dir / fmt::format("{}.bin", i);
     FILE *fp = fopen(p.c_str(), "wb");
-    if (!fp) {
+    if (fp) {
+      if (fwrite(span.data(), 1, span.size(), fp) != span.size()) {
+        std::cerr << "Failed to write " << p.string() << std::endl;
+        failed = true;
+      }
+      fclose(fp);
+    } else {
       std::cerr << "Failed to open " << p.string() << std::endl;
       failed = true;
-      return;
     }
-    fwrite(span.data(), 1, span.size(), fp);
-    fclose(fp);
 
     progress.report(++n_completed, images.size());
   });

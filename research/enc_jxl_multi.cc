@@ -8,6 +8,31 @@ using namespace jxl;
 
 namespace research {
 
+namespace {
+
+// splitting_heuristics_properties に max_properties と max_refs を反映する
+void ApplyPropertiesOption(ModularOptions &options,
+                           const MultiOptions &multi_options) {
+  if (multi_options.channel_per_image > 0) {
+    options.max_properties =
+        std::min(options.max_properties,
+                 static_cast<int>(multi_options.channel_per_image) - 1);
+  }
+
+  uint32_t n_ref_channels =
+      options.max_properties +
+      multi_options.max_refs * multi_options.channel_per_image;
+  for (uint32_t i = 0; i < n_ref_channels * 4; i++) {
+    uint32_t prop = kNumNonrefProperties + i;
+    if (std::find(options.splitting_heuristics_properties.begin(),
+                  options.splitting_heuristics_properties.end(),
+                  prop) == options.splitting_heuristics_properties.end())
+      options.splitting_heuristics_properties.push_back(prop);
+  }
+}
+
+}  // namespace
+
 CombinedImage::CombinedImage(Image image, size_t n_images)
     : n_images(n_images) {
   JXL_CHECK((image.channel.size() - image.nb_meta_channels) % n_images == 0);
@@ -18,7 +43,8 @@ CombinedImage CombineImage(Image &&image) {
   return {std::forward<Image>(image), 1};
 }
 
-CombinedImage CombineImage(const std::vector<std::shared_ptr<const Image>> &images) {
+CombinedImage CombineImage(
+    const std::vector<std::shared_ptr<const Image>> &images) {
   JXL_CHECK(images.size() > 0);
   const Image &first_image = *images[0];
 
@@ -57,7 +83,13 @@ Status ModularEncodeMulti(
     std::vector<Token> *tokens = nullptr, size_t *width = nullptr);
 
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
-               const ModularOptions &options, size_t max_refs) {
+               const ModularOptions &options_in, size_t max_refs) {
+  MultiOptions multi_options{
+      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
+      std::min(max_refs, ci.n_images - 1)};
+  ModularOptions options = options_in;
+  ApplyPropertiesOption(options, multi_options);
+
   TreeSamples tree_samples;
   if (!tree_samples.SetPredictor(options.predictor, options.wp_tree_mode))
     JXL_ABORT("SetPredictor failed");
@@ -82,11 +114,8 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
                                      diff_samples, options.max_property_values);
 
   size_t total_pixels = 0;
-  JXL_CHECK(ModularEncodeMulti(
-      ci.image, options,
-      {(ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-       std::min(max_refs, ci.n_images - 1)},
-      nullptr, nullptr, 0, 0, &tree_samples, &total_pixels));
+  JXL_CHECK(ModularEncodeMulti(ci.image, options, multi_options, nullptr,
+                               nullptr, 0, 0, &tree_samples, &total_pixels));
 
   Tree tree = LearnTree(std::move(tree_samples), total_pixels, options,
                         multiplier_info, range);
@@ -108,16 +137,19 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
 }
 
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
-                  const jxl::ModularOptions &options, size_t max_refs,
+                  const jxl::ModularOptions &options_in, size_t max_refs,
                   const jxl::Tree &tree) {
+  MultiOptions multi_options{
+      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
+      std::min(max_refs, ci.n_images - 1)};
+  ModularOptions options = options_in;
+  ApplyPropertiesOption(options, multi_options);
+
   std::vector<std::vector<Token>> tokens(1);
   std::vector<size_t> image_widths(1);
-  JXL_CHECK(ModularEncodeMulti(
-      ci.image, options,
-      {(ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-       std::min(max_refs, ci.n_images - 1)},
-      nullptr, nullptr, 0, 0, nullptr, nullptr, &tree, nullptr, &tokens[0],
-      &image_widths[0]));
+  JXL_CHECK(ModularEncodeMulti(ci.image, options, multi_options, nullptr,
+                               nullptr, 0, 0, nullptr, nullptr, &tree, nullptr,
+                               &tokens[0], &image_widths[0]));
 
   HistogramParams params;
   // TODO(research):
