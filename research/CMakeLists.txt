@@ -30,10 +30,13 @@ target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
 add_executable(enc_brute_force enc_brute_force_main.cc)
 target_link_libraries(enc_brute_force research ${Boost_LIBRARIES})
 
+add_executable(enc_without_header enc_without_header_main.cc)
+target_link_libraries(enc_without_header research ${Boost_LIBRARIES})
+
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})
 
 add_executable(prop_kmeans prop_kmeans_main.cc)
 target_link_libraries(prop_kmeans research ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES})
 
-add_custom_target(research_exe ALL DEPENDS cost_graph_enc enc_brute_force prop_extract prop_kmeans)
+add_custom_target(research_exe ALL DEPENDS cost_graph_enc enc_brute_force enc_without_header prop_extract prop_kmeans)

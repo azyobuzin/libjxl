@@ -6,6 +6,7 @@
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace research {
 
