@@ -15,6 +15,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   cost_graph_enc.cc
   enc_brute_force.cc
   enc_jxl_multi.cc
+  fields.cc
   images_provider.cc
   progress.cc
   prop_extract.cc

@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
 
   auto tree = CreateTree(images, options);
 
-  std::vector<EncodedImages> results;
+  std::vector<EncodedCombinedImage> results;
   {
     ConsoleProgressReporter progress("Encoding");
     results = EncodeWithBruteForce(images, tree, options,

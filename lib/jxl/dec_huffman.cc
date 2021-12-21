@@ -249,7 +249,7 @@ WithEntropy<uint16_t> HuffmanDecodingData::ReadSymbol(BitReader* br) const {
     table += br->PeekBits(n_bits);
   }
   br->Consume(table->bits);
-  return {table->value, table->bits};
+  return {table->value, static_cast<double>(table->bits)};
 }
 
 }  // namespace jxl

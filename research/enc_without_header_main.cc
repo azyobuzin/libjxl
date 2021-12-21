@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <iostream>
 
-#include "enc.h"
 #include "enc_jxl_multi.h"
+#include "fields.h"
 #include "images_provider.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     jxl::BitWriter writer;
 
     if (use_palette) {
-      ImagesHeader header;
+      CombinedImageHeader header;
       jxl::CompressParams cparams;
       cparams.SetLossless();
 

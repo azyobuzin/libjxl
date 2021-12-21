@@ -14,12 +14,12 @@ namespace research {
 namespace {
 
 struct EncodingTree {
-  EncodedImages images;
+  EncodedCombinedImage images;
   std::shared_ptr<EncodingTree> parent;
   std::vector<std::shared_ptr<EncodingTree>> children;
 };
 
-EncodedImages ComputeEncodedBits(
+EncodedCombinedImage ComputeEncodedBits(
     std::vector<std::shared_ptr<const jxl::Image>> images,
     std::vector<size_t> image_indices, const jxl::ModularOptions &options,
     size_t max_refs) {
@@ -38,7 +38,7 @@ std::shared_ptr<EncodingTree> CreateEncodingTree(
     std::shared_ptr<const ImageTree<size_t>> root, ImagesProvider &images,
     const jxl::ModularOptions &options, ProgressReporter *progress) {
   std::atomic_size_t n_completed = 0;
-  std::vector<EncodedImages> encoded_data(images.size());
+  std::vector<EncodedCombinedImage> encoded_data(images.size());
 
   // 圧縮結果を用意する
   // 後ですべて使うので並列にやっておく
@@ -86,7 +86,7 @@ struct Traverse {
   const jxl::ModularOptions &options;
   size_t max_refs;
   ProgressReporter *progress;
-  tbb::concurrent_vector<EncodedImages> results;
+  tbb::concurrent_vector<EncodedCombinedImage> results;
   std::atomic_size_t n_completed;
 
   Traverse(size_t n_images, const jxl::ModularOptions &options, size_t max_refs,
@@ -119,7 +119,7 @@ struct Traverse {
       image_indices.insert(image_indices.end(),
                            child->images.image_indices.cbegin(),
                            child->images.image_indices.cend());
-      EncodedImages combined_bits = ComputeEncodedBits(
+      EncodedCombinedImage combined_bits = ComputeEncodedBits(
           std::move(images), std::move(image_indices), options, max_refs);
 
       if (combined_bits.n_bits < node->images.n_bits + child->images.n_bits) {
@@ -145,14 +145,14 @@ struct Traverse {
 
 }  // namespace
 
-std::vector<EncodedImages> EncodeWithBruteForce(
+std::vector<EncodedCombinedImage> EncodeWithBruteForce(
     ImagesProvider &images, std::shared_ptr<const ImageTree<size_t>> root,
     const jxl::ModularOptions &options, size_t max_refs,
     ProgressReporter *progress) {
   Traverse traverse(images.size(), options, max_refs, progress);
   traverse(CreateEncodingTree(root, images, options, progress));
 
-  std::vector<EncodedImages> results;
+  std::vector<EncodedCombinedImage> results;
   results.reserve(traverse.results.size());
   std::move(traverse.results.begin(), traverse.results.end(),
             std::back_inserter(results));
