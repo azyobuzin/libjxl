@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 # 共通ライブラリ
 add_library(research STATIC EXCLUDE_FROM_ALL
   cost_graph_enc.cc
+  dec_jxl_multi.cc
   enc_brute_force.cc
   enc_jxl_multi.cc
   fields.cc
