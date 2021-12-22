@@ -1,5 +1,6 @@
 #include "dec_jxl_multi.h"
 
+#include <fmt/core.h>
 #include <tbb/parallel_for.h>
 
 #include "lib/jxl/dec_ans.h"
@@ -15,9 +16,8 @@ namespace {
 // 8bit しか想定しないことにする
 constexpr int kBitdepth = 8;
 
-std::vector<Image> DecodeCombinedImage(uint32_t width, uint32_t height,
-                                       uint32_t n_channel, uint32_t n_images,
-                                       Span<const uint8_t> data) {
+Image DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_channel,
+                          uint32_t n_images, Span<const uint8_t> data) {
   BitReader reader(data);
 
   // 決定木
@@ -41,18 +41,18 @@ std::vector<Image> DecodeCombinedImage(uint32_t width, uint32_t height,
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
   JXL_CHECK(ModularGenericDecompress(&reader, ci, &header, 0, &options, &dr,
                                      false, &tree, &code, &context_map, false));
+  return ci;
+}
 
-  // 画像を分解する
-  std::vector<Image> results;
-  results.reserve(n_images);
-  for (uint32_t i = 0; i < n_images; i++) {
-    Image& image = results.emplace_back(width, height, kBitdepth, n_channel);
-    for (uint32_t j = 0; j < n_channel; j++)
-      CopyImageTo(ci.channel.at(i * n_channel + j).plane,
-                  &image.channel[j].plane);
+Image ImageFromCombined(const Image& combined_image, uint32_t n_channel,
+                        uint32_t idx) {
+  Image result(combined_image.w, combined_image.h, combined_image.bitdepth,
+               n_channel);
+  for (uint32_t c = 0; c < n_channel; c++) {
+    CopyImageTo(combined_image.channel.at(idx * n_channel + c).plane,
+                &result.channel[c].plane);
   }
-
-  return results;
+  return result;
 }
 
 }  // namespace
@@ -66,8 +66,7 @@ ClusterFileReader::ClusterFileReader(uint32_t width, uint32_t height,
       header_(width, height, n_channel) {
   BitReader reader(data);
   JXL_CHECK(Bundle::Read(&reader, &header_));
-
-  reader.JumpToByteBoundary();
+  JXL_CHECK(reader.JumpToByteBoundary());
   data_ = reader.GetSpan();
 }
 
@@ -88,13 +87,34 @@ std::vector<Image> ClusterFileReader::ReadAll() {
     const auto& ci_info = header_.combined_images[i];
     auto [result_idx, offset] = accum_idx_bytes[i];
     Span<const uint8_t> span(data_.data() + offset, ci_info.n_bytes);
-    std::vector<Image> images = DecodeCombinedImage(width_, height_, n_channel_,
-                                                    ci_info.n_images, span);
-    JXL_CHECK(images.size() == ci_info.n_images);
-    std::move(images.begin(), images.end(), results.begin() + result_idx);
+    Image combined_image = DecodeCombinedImage(width_, height_, n_channel_,
+                                               ci_info.n_images, span);
+    for (size_t j = 0; j < ci_info.n_images; j++)
+      results.at(result_idx + j) =
+          ImageFromCombined(combined_image, n_channel_, j);
   });
 
   return results;
+}
+
+Image ClusterFileReader::Read(size_t idx) {
+  size_t accum_idx = 0, accum_bytes = 0;
+
+  for (const auto& ci_info : header_.combined_images) {
+    if (idx >= accum_idx + ci_info.n_images) {
+      accum_idx += ci_info.n_images;
+      accum_bytes += ci_info.n_bytes;
+      continue;
+    }
+
+    // Found
+    Span<const uint8_t> span(data_.data() + accum_bytes, ci_info.n_bytes);
+    Image combined_image = DecodeCombinedImage(width_, height_, n_channel_,
+                                               ci_info.n_images, span);
+    return ImageFromCombined(combined_image, n_channel_, idx - accum_idx);
+  }
+
+  throw std::out_of_range(fmt::format("idx {} >= n_images {}", idx, accum_idx));
 }
 
 }  // namespace research

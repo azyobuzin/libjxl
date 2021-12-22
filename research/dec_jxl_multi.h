@@ -23,6 +23,7 @@ class ClusterFileReader {
   uint32_t width_;
   uint32_t height_;
   uint32_t n_channel_;
+  // ヘッダーを含まないバイト列
   jxl::Span<const uint8_t> data_;
   ClusterHeader header_;
 };
