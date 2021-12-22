@@ -14,7 +14,7 @@ struct CombinedImageHeader : public jxl::Fields {
 
 #if JXL_IS_DEBUG_BUILD
   const char* Name() const override { return "research::CombinedImageHeader"; }
-  #endif
+#endif
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 
@@ -27,7 +27,7 @@ struct ImageInfo : public jxl::Fields {
 
 #if JXL_IS_DEBUG_BUILD
   const char* Name() const override { return "research::ImageInfo"; }
-  #endif
+#endif
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 
@@ -44,7 +44,7 @@ struct CombinedImageInfo : public jxl::Fields {
 
 #if JXL_IS_DEBUG_BUILD
   const char* Name() const override { return "research::CombinedImageInfo"; }
-  #endif
+#endif
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 
@@ -65,7 +65,7 @@ struct ClusterHeader : public jxl::Fields {
 
 #if JXL_IS_DEBUG_BUILD
   const char* Name() const override { return "research::ClusterHeader"; }
-  #endif
+#endif
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 

@@ -21,7 +21,7 @@ struct EncodingTree {
 
 EncodedCombinedImage ComputeEncodedBits(
     std::vector<std::shared_ptr<const jxl::Image>> images,
-    std::vector<size_t> image_indices, const jxl::ModularOptions &options,
+    std::vector<uint32_t> image_indices, const jxl::ModularOptions &options,
     size_t max_refs) {
   CombinedImage ci = CombineImage(images);
   BitWriter writer;
@@ -40,13 +40,17 @@ std::shared_ptr<EncodingTree> CreateEncodingTree(
   std::atomic_size_t n_completed = 0;
   std::vector<EncodedCombinedImage> encoded_data(images.size());
 
+  JXL_CHECK(encoded_data.size() <= std::numeric_limits<uint32_t>().max());
+
   // 圧縮結果を用意する
   // 後ですべて使うので並列にやっておく
-  tbb::parallel_for(size_t(0), encoded_data.size(), [&](size_t i) {
-    encoded_data[i] = ComputeEncodedBits(
-        {std::make_shared<const jxl::Image>(images.get(i))}, {i}, options, 0);
-    if (progress) progress->report(++n_completed, encoded_data.size() * 2);
-  });
+  tbb::parallel_for(
+      uint32_t(0), static_cast<uint32_t>(encoded_data.size()), [&](uint32_t i) {
+        encoded_data[i] = ComputeEncodedBits(
+            {std::make_shared<const jxl::Image>(images.get(i))}, {i}, options,
+            0);
+        if (progress) progress->report(++n_completed, encoded_data.size() * 2);
+      });
 
   std::shared_ptr<EncodingTree> result_root(
       new EncodingTree{std::move(encoded_data.at(root->image_idx))});

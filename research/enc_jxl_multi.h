@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ostream>
 #include <vector>
 
 #include "lib/jxl/enc_bit_writer.h"
@@ -19,7 +20,7 @@ struct CombinedImage {
 
 struct EncodedCombinedImage {
   // data に含まれる画像のインデックス
-  std::vector<size_t> image_indices;
+  std::vector<uint32_t> image_indices;
   std::vector<std::shared_ptr<const jxl::Image>> included_images;
   jxl::PaddedBytes data;
   // 書き込まれたビット数
@@ -39,5 +40,8 @@ jxl::Tree LearnTree(jxl::BitWriter &writer, const CombinedImage &image,
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &image,
                   const jxl::ModularOptions &options, size_t max_refs,
                   const jxl::Tree &tree);
+
+void PackToClusterFile(std::vector<EncodedCombinedImage> combined_images,
+                       std::ostream &dst);
 
 }  // namespace research

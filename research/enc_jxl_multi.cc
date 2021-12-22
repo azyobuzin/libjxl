@@ -1,5 +1,6 @@
 #include "enc_jxl_multi.h"
 
+#include "fields.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
@@ -161,6 +162,61 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens, &code,
                            &context_map, &writer, 0, nullptr);
   WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
+}
+
+void PackToClusterFile(std::vector<EncodedCombinedImage> combined_images,
+                       std::ostream &dst) {
+  JXL_CHECK(combined_images.size() > 0);
+
+  // インデックスがあまりランダムな順番にならないといいなぁ（願望）
+  std::sort(combined_images.begin(), combined_images.end(),
+            [](const EncodedCombinedImage &x, const EncodedCombinedImage &y) {
+              return x.image_indices.at(0) < y.image_indices.at(0);
+            });
+
+  // 1枚目からデータを収集
+  uint32_t width, height, n_channel;
+  {
+    const auto &first_image = combined_images[0].included_images.at(0);
+    width = first_image->w;
+    height = first_image->h;
+    n_channel = first_image->channel.size() - first_image->nb_meta_channels;
+  }
+
+  // ヘッダー作成
+  ClusterHeader header(width, height, n_channel);
+  size_t n_images = 0;
+
+  header.combined_images.reserve(combined_images.size());
+  for (const auto &ci : combined_images) {
+    auto &ci_info =
+        header.combined_images.emplace_back(width, height, n_channel);
+    JXL_ASSERT(ci.image_indices.size() == ci.included_images.size());
+    n_images += ci.image_indices.size();
+    ci_info.n_images = static_cast<uint32_t>(ci.image_indices.size());
+    ci_info.n_bytes = static_cast<uint32_t>(ci.data.size());
+  }
+
+  header.pointers.resize(n_images);
+  size_t ptr_idx = 0;
+  for (const auto &ci : combined_images) {
+    for (auto idx : ci.image_indices) header.pointers.at(idx) = ptr_idx++;
+  }
+
+  JXL_ASSERT(ptr_idx == n_images);
+
+  BitWriter header_writer;
+  JXL_CHECK(Bundle::Write(header, &header_writer, 0, nullptr));
+  header_writer.ZeroPadToByte();
+
+  Span<const uint8_t> header_span = header_writer.GetSpan();
+  dst.write(reinterpret_cast<const char *>(header_span.data()),
+            header_span.size());
+
+  // 画像を書き込む
+  for (const auto &ci : combined_images) {
+    dst.write(reinterpret_cast<const char *>(ci.data.data()), ci.data.size());
+  }
 }
 
 }  // namespace research

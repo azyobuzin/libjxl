@@ -1,13 +1,12 @@
 #include <fmt/core.h>
 
 #include <boost/program_options.hpp>
-#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 #include "cost_graph_util.h"
 #include "enc_brute_force.h"
 
-namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 using namespace research;
@@ -38,7 +37,7 @@ int main(int argc, char *argv[]) {
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
-    ("out-dir", po::value<fs::path>(), "圧縮結果の出力先");
+    ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス");
   // clang-format on
 
   po::options_description all_desc;
@@ -101,26 +100,19 @@ int main(int argc, char *argv[]) {
     std::cout << std::endl << "bits: " << x.n_bits << std::endl << std::endl;
   }
 
-  if (!vm["out-dir"].empty()) {
-    const auto &out_dir = vm["out-dir"].as<fs::path>();
-    fs::create_directories(out_dir);
+  if (!vm["out"].empty()) {
+    const auto &out_path = vm["out"].as<std::string>();
+    std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
+    if (!dst) {
+      std::cerr << "Failed to open " << out_path << std::endl;
+      return 1;
+    }
 
-    for (size_t i = 0; i < results.size(); i++) {
-      const auto &data = results[i].data;
-      fs::path p = out_dir / fmt::format("{}.bin", i);
-      FILE *fp = fopen(p.c_str(), "wb");
-      if (!fp) {
-        std::cerr << "Failed to open " << p.string() << std::endl;
-        return 1;
-      }
+    PackToClusterFile(std::move(results), dst);
 
-      auto n_written = fwrite(data.data(), 1, data.size(), fp);
-      fclose(fp);
-
-      if (n_written != data.size()) {
-        std::cerr << "Failed to write " << p.string() << std::endl;
-        return 1;
-      }
+    if (!dst) {
+      std::cerr << "Failed to write " << out_path << std::endl;
+      return 1;
     }
   }
 
