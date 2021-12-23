@@ -157,7 +157,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id, Image *image,
-                                 const DecodingRect *rect) {
+                                 const DecodingRect *rect,
+                                 const jxl::MultiOptions &multi_options) {
   Channel &channel = image->channel[chan];
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
@@ -357,9 +358,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
-      // TODO(research): Support multi
       PrecomputeReferences(channel, y, *image, chan,
-                           std::numeric_limits<size_t>::max(), {}, &references);
+                           std::numeric_limits<size_t>::max(), multi_options,
+                           &references);
       InitPropsRow(&properties, static_props, y);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
@@ -379,9 +380,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
-      // TODO(research): Support multi
       PrecomputeReferences(channel, y, *image, chan,
-                           std::numeric_limits<size_t>::max(), {}, &references);
+                           std::numeric_limits<size_t>::max(), multi_options,
+                           &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
             PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
@@ -422,19 +423,22 @@ Status ValidateChannelDimensions(const Image &image,
 }
 
 Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
-                     size_t group_id, ModularOptions *options,
+                     bool read_header, size_t group_id, ModularOptions *options,
                      const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map,
-                     bool allow_truncated_group, const DecodingRect *rect) {
+                     bool allow_truncated_group, const DecodingRect *rect,
+                     const jxl::MultiOptions &multi_options) {
   if (image.channel.empty()) return true;
 
   // decode transforms
-  JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
-  JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
-              header.transforms.size());
-  image.transform = header.transforms;
-  for (Transform &transform : image.transform) {
-    JXL_RETURN_IF_ERROR(transform.MetaApply(image));
+  if (read_header) {
+    JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
+    JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
+                header.transforms.size());
+    image.transform = header.transforms;
+    for (Transform &transform : image.transform) {
+      JXL_RETURN_IF_ERROR(transform.MetaApply(image));
+    }
   }
   if (image.error) {
     return JXL_FAILURE("Corrupt file. Aborting.");
@@ -514,9 +518,9 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                                         channel.h > options->max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(br, &reader, *context_map,
-                                                  *tree, header.wp_header, i,
-                                                  group_id, &image, rect));
+    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
+        br, &reader, *context_map, *tree, header.wp_header, i, group_id, &image,
+        rect, multi_options));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
@@ -546,8 +550,9 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 #endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
-  auto dec_status = ModularDecode(br, image, *header, group_id, options, tree,
-                                  code, ctx_map, allow_truncated_group, rect);
+  auto dec_status =
+      ModularDecode(br, image, *header, /*read_header=*/true, group_id, options,
+                    tree, code, ctx_map, allow_truncated_group, rect, {});
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   if (undo_transforms) image.undo_transforms(header->wp_header);
@@ -574,3 +579,17 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 }
 
 }  // namespace jxl
+
+namespace research {
+
+jxl::Status ModularDecodeMulti(
+    jxl::BitReader *br, jxl::Image &image, jxl::GroupHeader &header,
+    size_t group_id, jxl::ModularOptions *options, const jxl::Tree *global_tree,
+    const jxl::ANSCode *global_code, const std::vector<uint8_t> *global_ctx_map,
+    const jxl::DecodingRect *rect, const jxl::MultiOptions &multi_options) {
+  return jxl::ModularDecode(br, image, header, false, group_id, options,
+                            global_tree, global_code, global_ctx_map, false,
+                            rect, multi_options);
+}
+
+}  // namespace research

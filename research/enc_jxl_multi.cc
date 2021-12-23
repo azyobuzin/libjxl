@@ -164,15 +164,9 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
 }
 
-void PackToClusterFile(std::vector<EncodedCombinedImage> combined_images,
+void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
                        std::ostream &dst) {
   JXL_CHECK(combined_images.size() > 0);
-
-  // インデックスがあまりランダムな順番にならないといいなぁ（願望）
-  std::sort(combined_images.begin(), combined_images.end(),
-            [](const EncodedCombinedImage &x, const EncodedCombinedImage &y) {
-              return x.image_indices.at(0) < y.image_indices.at(0);
-            });
 
   // 1枚目からデータを収集
   uint32_t width, height, n_channel;

@@ -160,6 +160,13 @@ std::vector<EncodedCombinedImage> EncodeWithBruteForce(
   results.reserve(traverse.results.size());
   std::move(traverse.results.begin(), traverse.results.end(),
             std::back_inserter(results));
+
+  // インデックスがあまりランダムな順番にならないといいなぁ（願望）
+  std::sort(results.begin(), results.end(),
+            [](const EncodedCombinedImage &x, const EncodedCombinedImage &y) {
+              return x.image_indices.at(0) < y.image_indices.at(0);
+            });
+
   return results;
 }
 

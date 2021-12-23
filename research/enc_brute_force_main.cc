@@ -1,11 +1,16 @@
 #include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <tbb/parallel_for.h>
 
 #include <boost/program_options.hpp>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "cost_graph_util.h"
+#include "dec_jxl_multi.h"
 #include "enc_brute_force.h"
+#include "lib/jxl/base/printf_macros.h"
 
 namespace po = boost::program_options;
 
@@ -17,6 +22,13 @@ std::shared_ptr<ImageTree<size_t>> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Computing MST");
   return CreateMstWithDifferentTree(images, options, &progress);
+}
+
+std::tuple<uint32_t, uint32_t, uint32_t> GetImageInfo(ImagesProvider &images) {
+  jxl::Image img = images.get(0);
+  return std::make_tuple(
+      static_cast<uint32_t>(img.w), static_cast<uint32_t>(img.h),
+      static_cast<uint32_t>(img.channel.size() - img.nb_meta_channels));
 }
 
 }  // namespace
@@ -37,7 +49,8 @@ int main(int argc, char *argv[]) {
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
-    ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス");
+    ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
+    ("verify", po::bool_switch(), "エンコード結果をデコードして、一致するかを確認する");
   // clang-format on
 
   po::options_description all_desc;
@@ -67,6 +80,8 @@ int main(int argc, char *argv[]) {
   images.ycocg = true;
   images.only_first_channel = vm["y-only"].as<bool>();
 
+  size_t max_refs = vm["max-refs"].as<size_t>();
+
   // Tortoise相当
   jxl::ModularOptions options{
       .nb_repeats = vm["fraction"].as<float>(),
@@ -81,8 +96,7 @@ int main(int argc, char *argv[]) {
   std::vector<EncodedCombinedImage> results;
   {
     ConsoleProgressReporter progress("Encoding");
-    results = EncodeWithBruteForce(images, tree, options,
-                                   vm["max-refs"].as<size_t>(), &progress);
+    results = EncodeWithBruteForce(images, tree, options, max_refs, &progress);
   }
 
   for (const auto &x : results) {
@@ -108,12 +122,100 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    PackToClusterFile(std::move(results), dst);
+    PackToClusterFile(results, dst);
 
     if (!dst) {
       std::cerr << "Failed to write " << out_path << std::endl;
       return 1;
     }
+  }
+
+  if (vm["verify"].as<bool>()) {
+    ConsoleProgressReporter progress("Verifying");
+
+    std::vector<jxl::Image> decoded_images;
+    {
+      auto [width, height, n_channel] = GetImageInfo(images);
+
+      // ClusterFile形式に変換
+      std::ostringstream oss(std::ios_base::out | std::ios_base::binary);
+      PackToClusterFile(results, oss);
+
+      if (!oss) {
+        std::cerr << "Failed to write to buffer" << std::endl;
+        return 1;
+      }
+
+      // ClusterFile形式から読み出す
+      std::string buf = oss.str();
+      jxl::Span<const uint8_t> span(buf);
+      ClusterFileReader reader(width, height, n_channel, max_refs, span);
+      if (!reader.ReadAll(decoded_images)) {
+        std::cerr << "Failed to decode images" << std::endl;
+        return 1;
+      }
+    }
+
+    if (decoded_images.size() != images.size()) {
+      fmt::print(std::cerr, "decoded_images.size ({}) != images.size ({})\n",
+                 decoded_images.size(), images.size());
+      return 1;
+    }
+
+    std::atomic_size_t n_completed;
+    std::atomic_bool mismatch = false;
+
+    tbb::parallel_for(size_t(0), decoded_images.size(), [&](size_t i) {
+      const auto &decoded_image = decoded_images[i];
+      const auto expected_image = images.get(i);
+
+      if (decoded_image.channel.size() != expected_image.channel.size()) {
+        fmt::print(std::cerr,
+                   "{} ({}): channel mismatch (actual: {}, expected: {})\n",
+                   images.get_label(i), i, decoded_image.channel.size(),
+                   expected_image.channel.size());
+        mismatch = true;
+      } else {
+        for (size_t chan = 0; chan < decoded_image.channel.size(); chan++) {
+          const auto &decoded_chan = decoded_image.channel[chan];
+          const auto &expected_chan = expected_image.channel[chan];
+
+          if ((decoded_chan.w != expected_chan.w) ||
+              (decoded_chan.h != expected_chan.h) ||
+              (decoded_chan.hshift != expected_chan.hshift) ||
+              (decoded_chan.vshift != expected_chan.vshift)) {
+            fmt::print(std::cerr,
+                       "{} ({}): size mismatch at channel {} (actual: {}<<{} x "
+                       "{}<<{}, expected: {}<<{} x {}<<{})\n",
+                       images.get_label(i), i, chan, decoded_chan.w,
+                       decoded_chan.hshift, decoded_chan.h, decoded_chan.vshift,
+                       expected_chan.w, expected_chan.hshift, expected_chan.h,
+                       expected_chan.vshift);
+            mismatch = true;
+            continue;
+          }
+
+          for (size_t y = 0; y < decoded_chan.h; y++) {
+            const jxl::pixel_type *decoded_row = decoded_chan.Row(y);
+            const jxl::pixel_type *expected_row = expected_chan.Row(y);
+            for (size_t x = 0; x < decoded_chan.w; x++) {
+              if (decoded_row[x] != expected_row[x]) {
+                fmt::print(std::cerr,
+                           "{} ({}): pixel ({}, {}) mismatch at channel {} "
+                           "(actual: {}, expected: {})\n",
+                           images.get_label(i), i, x, y, chan, decoded_row[x],
+                           expected_row[x]);
+                mismatch = true;
+              }
+            }
+          }
+        }
+      }
+
+      progress.report(++n_completed, decoded_images.size());
+    });
+
+    if (mismatch) return 1;
   }
 
   return 0;

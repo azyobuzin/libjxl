@@ -41,7 +41,7 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &image,
                   const jxl::ModularOptions &options, size_t max_refs,
                   const jxl::Tree &tree);
 
-void PackToClusterFile(std::vector<EncodedCombinedImage> combined_images,
+void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
                        std::ostream &dst);
 
 }  // namespace research
