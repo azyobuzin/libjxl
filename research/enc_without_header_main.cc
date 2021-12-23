@@ -88,7 +88,6 @@ int main(int argc, char *argv[]) {
     jxl::BitWriter writer;
 
     if (use_palette) {
-      CombinedImageHeader header;
       jxl::CompressParams cparams;
       cparams.SetLossless();
 
@@ -104,7 +103,7 @@ int main(int argc, char *argv[]) {
       global_palette.lossy_palette = false;
       if (jxl::TransformForward(global_palette, image.image,
                                 jxl::weighted::Header(), nullptr)) {
-        header.transforms.push_back(std::move(global_palette));
+        image.image.transform.push_back(std::move(global_palette));
         std::cerr << images.get_label(i) << " use global palette" << std::endl;
       }
 
@@ -123,13 +122,11 @@ int main(int argc, char *argv[]) {
                      (int)(cparams.channel_colors_percent / 100. * colors));
         if (jxl::TransformForward(local_palette, image.image,
                                   jxl::weighted::Header(), nullptr)) {
-          header.transforms.push_back(std::move(local_palette));
+          image.image.transform.push_back(std::move(local_palette));
           std::cerr << images.get_label(i) << " use local palette (channel "
                     << (i - image.image.nb_meta_channels) << ")" << std::endl;
         }
       }
-
-      JXL_CHECK(jxl::Bundle::Write(header, &writer, 0, nullptr));
     }
 
     jxl::Tree tree = LearnTree(writer, image, options, 0);

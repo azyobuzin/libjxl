@@ -9,7 +9,8 @@ namespace research {
 class ClusterFileReader {
  public:
   ClusterFileReader(uint32_t width, uint32_t height, uint32_t n_channel,
-                    size_t max_refs, jxl::Span<const uint8_t> data);
+                    int refchan, size_t max_refs,
+                    jxl::Span<const uint8_t> data);
 
   const ClusterHeader& header() const noexcept { return header_; }
 
@@ -22,6 +23,7 @@ class ClusterFileReader {
  private:
   uint32_t width_;
   uint32_t height_;
+  int refchan_;
   jxl::MultiOptions multi_options_;
   // ヘッダーを含まないバイト列
   jxl::Span<const uint8_t> data_;

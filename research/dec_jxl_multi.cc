@@ -42,6 +42,16 @@ Status DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_images,
     return status;
   }
 
+  // GroupHeader
+  GroupHeader header;
+  Bundle::Init(&header);
+  status =
+      JXL_STATUS(Bundle::Read(&reader, &header), "Bundle::Read(GroupHeader)");
+  if (!status) {
+    reader.Close();
+    return status;
+  }
+
   // 画像のヒストグラム
   ANSCode code;
   std::vector<uint8_t> context_map;
@@ -56,8 +66,6 @@ Status DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_images,
   // 画像
   out_image = Image(width, height, kBitdepth,
                     multi_options.channel_per_image * n_images);
-  GroupHeader header;
-  header.use_global_tree = true;
   ModularOptions options;
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
   status = JXL_STATUS(
@@ -67,6 +75,12 @@ Status DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_images,
   if (!status) {
     reader.Close();
     return status;
+  }
+
+  if (!reader.JumpToByteBoundary() ||
+      reader.TotalBitsConsumed() != data.size() * kBitsPerByte) {
+    reader.Close();
+    return JXL_STATUS(false, "読み残しがあります");
   }
 
   JXL_RETURN_IF_ERROR(reader.Close());
@@ -87,9 +101,12 @@ Image ImageFromCombined(const Image &combined_image, uint32_t n_channel,
 }  // namespace
 
 ClusterFileReader::ClusterFileReader(uint32_t width, uint32_t height,
-                                     uint32_t n_channel, size_t max_refs,
-                                     Span<const uint8_t> data)
-    : width_(width), height_(height), header_(width, height, n_channel) {
+                                     uint32_t n_channel, int refchan,
+                                     size_t max_refs, Span<const uint8_t> data)
+    : width_(width),
+      height_(height),
+      refchan_(refchan),
+      header_(width, height, n_channel) {
   multi_options_.channel_per_image = n_channel;
   multi_options_.max_refs = max_refs;
 
@@ -118,6 +135,7 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   }
 
   std::atomic<Status> status = Status(true);
+  out_images.resize(n_images());
 
   tbb::parallel_for(size_t(0), accum_idx_bytes.size(), [&](size_t i) {
     const auto &ci_info = header_.combined_images[i];

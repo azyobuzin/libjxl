@@ -80,12 +80,13 @@ int main(int argc, char *argv[]) {
   images.ycocg = true;
   images.only_first_channel = vm["y-only"].as<bool>();
 
+  int refchan = vm["refchan"].as<uint16_t>();
   size_t max_refs = vm["max-refs"].as<size_t>();
 
   // Tortoise相当
   jxl::ModularOptions options{
       .nb_repeats = vm["fraction"].as<float>(),
-      .max_properties = vm["refchan"].as<uint16_t>(),
+      .max_properties = refchan,
       .splitting_heuristics_properties = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3,
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
@@ -149,7 +150,8 @@ int main(int argc, char *argv[]) {
       // ClusterFile形式から読み出す
       std::string buf = oss.str();
       jxl::Span<const uint8_t> span(buf);
-      ClusterFileReader reader(width, height, n_channel, max_refs, span);
+      ClusterFileReader reader(width, height, n_channel, refchan, max_refs,
+                               span);
       if (!reader.ReadAll(decoded_images)) {
         std::cerr << "Failed to decode images" << std::endl;
         return 1;
@@ -162,7 +164,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    std::atomic_size_t n_completed;
+    std::atomic_size_t n_completed = 0;
     std::atomic_bool mismatch = false;
 
     tbb::parallel_for(size_t(0), decoded_images.size(), [&](size_t i) {

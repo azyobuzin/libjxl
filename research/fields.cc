@@ -18,18 +18,6 @@ constexpr int bit_width(unsigned int x) noexcept {
 
 }  // namespace
 
-Status CombinedImageHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  // https://github.com/libjxl/libjxl/blob/1d62c5fc07ec2bcb4baed46cc4b6e4611c714602/lib/jxl/modular/encoding/encoding.h#L35-L42
-  uint32_t num_transforms = static_cast<uint32_t>(transforms.size());
-  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
-      Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0, &num_transforms));
-  if (visitor->IsReading()) transforms.resize(num_transforms);
-  for (size_t i = 0; i < num_transforms; i++) {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&transforms[i]));
-  }
-  return true;
-}
-
 Status ImageInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   // https://github.com/libjxl/libjxl/blob/1d62c5fc07ec2bcb4baed46cc4b6e4611c714602/lib/jxl/frame_header.cc#L259-L260
   const U32Enc enc(BitsOffset(8, 1), BitsOffset(11, 1 + (1 << 8)),

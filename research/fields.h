@@ -7,20 +7,6 @@
 
 namespace research {
 
-// パレット変換情報を CombinedImage ごとに持つ
-// enc_without_headerの実験結果から、パレット変換はあまり意味がなさそうなので、使わない方向で
-struct CombinedImageHeader : public jxl::Fields {
-  CombinedImageHeader() { jxl::Bundle::Init(this); }
-
-#if JXL_IS_DEBUG_BUILD
-  const char* Name() const override { return "research::CombinedImageHeader"; }
-#endif
-
-  jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
-
-  std::vector<jxl::Transform> transforms;
-};
-
 // 全体の情報を格納するために使う予定
 struct ImageInfo : public jxl::Fields {
   ImageInfo() { jxl::Bundle::Init(this); }

@@ -146,11 +146,14 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
 
+  GroupHeader group_header;
   std::vector<std::vector<Token>> tokens(1);
   std::vector<size_t> image_widths(1);
   JXL_CHECK(ModularEncodeMulti(ci.image, options, multi_options, nullptr,
-                               nullptr, 0, 0, nullptr, nullptr, &tree, nullptr,
-                               &tokens[0], &image_widths[0]));
+                               nullptr, 0, 0, nullptr, nullptr, &tree,
+                               &group_header, &tokens[0], &image_widths[0]));
+
+  JXL_CHECK(Bundle::Write(group_header, &writer, kLayerHeader, nullptr));
 
   HistogramParams params;
   // TODO(research):
