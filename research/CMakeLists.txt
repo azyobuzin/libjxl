@@ -13,13 +13,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 # 共通ライブラリ
 add_library(research STATIC EXCLUDE_FROM_ALL
   cost_graph_enc.cc
-  dec_jxl_multi.cc
+  common_cluster.cc
+  dec_cluster.cc
   enc_brute_force.cc
-  enc_jxl_multi.cc
-  fields.cc
+  enc_cluster.cc
+  enc_flif.cc
   images_provider.cc
   progress.cc
   prop_extract.cc
+  flif/image/color_range.cpp
 )
 target_compile_options(research PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(research jxl-static fmt::fmt ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})

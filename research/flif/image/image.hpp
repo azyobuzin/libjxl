@@ -31,7 +31,7 @@ limitations under the License.
 #include "../compiler-specific.hpp"
 
 
-#include "../../extern/lodepng.h"
+#include "../lodepng.h"
 
 #ifdef SUPPORT_HDR
 typedef int32_t ColorVal;  // used in computations

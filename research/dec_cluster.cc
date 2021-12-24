@@ -1,4 +1,4 @@
-#include "dec_jxl_multi.h"
+#include "dec_cluster.h"
 
 #include <fmt/core.h>
 #include <tbb/parallel_for.h>
@@ -106,7 +106,7 @@ ClusterFileReader::ClusterFileReader(uint32_t width, uint32_t height,
     : width_(width),
       height_(height),
       refchan_(refchan),
-      header_(width, height, n_channel) {
+      header_(width, height, n_channel, /*TODO(research) flif_enabled=*/false) {
   multi_options_.channel_per_image = n_channel;
   multi_options_.max_refs = max_refs;
 

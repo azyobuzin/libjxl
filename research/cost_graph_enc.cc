@@ -2,7 +2,7 @@
 
 #include "cost_graph.h"
 #include "edmonds_optimum_branching.hpp"
-#include "enc_jxl_multi.h"
+#include "enc_cluster.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 

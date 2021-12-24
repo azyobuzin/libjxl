@@ -63,6 +63,7 @@ void flif_encode_scanlines_inner(IO& io, FLIF_UNUSED(Rac& rac), std::vector<Code
     for (int k=0,i=0; k < 5; k++) {
         int p=PLANE_ORDERING[k];
         if (p>=nump) continue;
+        if (p==0) continue;
         i++;
         if (ranges->min(p) >= ranges->max(p)) continue;
         const ColorVal minP = ranges->min(p);
@@ -205,11 +206,12 @@ void flif_encode_FLIF2_inner(IO& io, Rac& rac, std::vector<Coder> &coders, const
     UniformSymbolCoder<Rac> metaCoder(rac);
     const bool default_order = (options.chroma_subsampling==0);
     metaCoder.write_int(0, 1, (default_order? 1 : 0)); // we're using the default zoomlevel/plane ordering
-    for (int p=0; p<nump; p++) metaCoder.write_int(-1, MAX_PREDICTOR, the_predictor[p]);
+    for (int p=1; p<nump; p++) metaCoder.write_int(-1, MAX_PREDICTOR, the_predictor[p]);
     for (int i = 0; i < plane_zoomlevels(images[0], beginZL, endZL); i++) {
       std::pair<int, int> pzl = plane_zoomlevel(images[0], beginZL, endZL, i, ranges);
       int p = pzl.first;
       int z = pzl.second;
+      if (p == 0) continue;
       if (options.chroma_subsampling && p > 0 && p < 3 && z < 2) continue;
       if (!default_order) metaCoder.write_int(0, nump-1, p);
       if (ranges->min(p) >= ranges->max(p)) continue;
@@ -300,7 +302,7 @@ void flif_encode_FLIF2_pass(IO& io, Rac &rac, const Images &images, const ColorR
       // special case: very left top pixel must be written first to get it all started
 //      SimpleSymbolCoder<FLIFBitChanceMeta, Rac, 18> metaCoder(rac);
       UniformSymbolCoder<Rac> metaCoder(rac);
-      for (int p = 0; p < images[0].numPlanes(); p++) {
+      for (int p = 1; p < images[0].numPlanes(); p++) {
         if (ranges->min(p) < ranges->max(p)) {
             for (const Image& image : images) metaCoder.write_int(ranges->min(p), ranges->max(p), image(p,0,0,0));
             progress.pixels_done++;
@@ -668,7 +670,7 @@ void flif_make_lossy_interlaced(Images &images, const ColorRanges * ranges, int 
 
 template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, const std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props)
 {
-    for (int p = 0; p < ranges->numPlanes(); p++) {
+    for (int p = 1; p < ranges->numPlanes(); p++) {
         PropNamesAndRanges propRanges;
         if (encoding==flifEncoding::nonInterlaced) initPropRanges_scanlines(propRanges, *ranges, p, nb_frames, additional_props);
         else initPropRanges(propRanges, *ranges, p, nb_frames, additional_props);

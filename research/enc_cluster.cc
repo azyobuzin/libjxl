@@ -1,6 +1,6 @@
-#include "enc_jxl_multi.h"
+#include "enc_cluster.h"
 
-#include "fields.h"
+#include "common_cluster.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
@@ -181,13 +181,14 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
   }
 
   // ヘッダー作成
-  ClusterHeader header(width, height, n_channel);
+  ClusterHeader header(width, height, n_channel,
+                       /*TODO(research) flif_enabled=*/false);
   size_t n_images = 0;
 
   header.combined_images.reserve(combined_images.size());
   for (const auto &ci : combined_images) {
-    auto &ci_info =
-        header.combined_images.emplace_back(width, height, n_channel);
+    auto &ci_info = header.combined_images.emplace_back(
+        width, height, n_channel, /*TODO(research) flif_enabled=*/false);
     JXL_ASSERT(ci.image_indices.size() == ci.included_images.size());
     n_images += ci.image_indices.size();
     ci_info.n_images = static_cast<uint32_t>(ci.image_indices.size());

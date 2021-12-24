@@ -21,6 +21,8 @@ limitations under the License.
 #include <stdio.h>
 #include <string.h>
 
+#include "config.h"
+
 class FileIO
 {
 private:

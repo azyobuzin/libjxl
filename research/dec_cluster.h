@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fields.h"
+#include "common_cluster.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/modular/modular_image.h"
 

@@ -8,7 +8,7 @@
 #include <sstream>
 
 #include "cost_graph_util.h"
-#include "dec_jxl_multi.h"
+#include "dec_cluster.h"
 #include "enc_brute_force.h"
 #include "lib/jxl/base/printf_macros.h"
 

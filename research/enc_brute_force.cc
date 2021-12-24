@@ -2,7 +2,7 @@
 
 #include <stack>
 
-#include "enc_jxl_multi.h"
+#include "enc_cluster.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "tbb/concurrent_vector.h"
 #include "tbb/parallel_for_each.h"

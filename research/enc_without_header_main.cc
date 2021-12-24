@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <iostream>
 
-#include "enc_jxl_multi.h"
-#include "fields.h"
+#include "common_cluster.h"
+#include "enc_cluster.h"
 #include "images_provider.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/modular/transform/enc_transform.h"

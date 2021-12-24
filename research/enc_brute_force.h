@@ -1,7 +1,7 @@
 #pragma once
 
 #include "cost_graph.h"
-#include "enc_jxl_multi.h"
+#include "enc_cluster.h"
 
 namespace research {
 

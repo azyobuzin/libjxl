@@ -7,24 +7,13 @@
 
 namespace research {
 
-// 全体の情報を格納するために使う予定
-struct ImageInfo : public jxl::Fields {
-  ImageInfo() { jxl::Bundle::Init(this); }
-
-#if JXL_IS_DEBUG_BUILD
-  const char* Name() const override { return "research::ImageInfo"; }
-#endif
-
-  jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
-
-  uint32_t width;
-  uint32_t height;
-  uint32_t n_channel;
-};
-
 struct CombinedImageInfo : public jxl::Fields {
-  CombinedImageInfo(uint32_t width, uint32_t height, uint32_t n_channel)
-      : width_(width), height_(height), n_channel_(n_channel) {
+  CombinedImageInfo(uint32_t width, uint32_t height, uint32_t n_channel,
+                    bool flif_enabled)
+      : width_(width),
+        height_(height),
+        n_channel_(n_channel),
+        flif_enabled_(flif_enabled) {
     jxl::Bundle::Init(this);
   }
 
@@ -36,16 +25,22 @@ struct CombinedImageInfo : public jxl::Fields {
 
   uint32_t n_images;
   uint32_t n_bytes;
+  uint32_t n_flif_bytes;
 
  private:
   uint32_t width_;
   uint32_t height_;
   uint32_t n_channel_;
+  bool flif_enabled_;
 };
 
 struct ClusterHeader : public jxl::Fields {
-  ClusterHeader(uint32_t width, uint32_t height, uint32_t n_channel)
-      : width_(width), height_(height), n_channel_(n_channel) {
+  ClusterHeader(uint32_t width, uint32_t height, uint32_t n_channel,
+                bool flif_enabled)
+      : width_(width),
+        height_(height),
+        n_channel_(n_channel),
+        flif_enabled_(flif_enabled) {
     jxl::Bundle::Init(this);
   }
 
@@ -64,6 +59,7 @@ struct ClusterHeader : public jxl::Fields {
   uint32_t width_;
   uint32_t height_;
   uint32_t n_channel_;
+  bool flif_enabled_;
 };
 
 }  // namespace research
