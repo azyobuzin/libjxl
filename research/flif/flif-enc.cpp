@@ -668,7 +668,7 @@ void flif_make_lossy_interlaced(Images &images, const ColorRanges * ranges, int 
     }
 }
 
-template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, const std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props)
+template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, const std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props, const bool printTree)
 {
     for (int p = 1; p < ranges->numPlanes(); p++) {
         PropNamesAndRanges propRanges;
@@ -678,6 +678,7 @@ template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FL
 //        forest[p].print(stdout);
         if (ranges->min(p)<ranges->max(p))
         metacoder.write_tree(forest[p]);
+        if (printTree) print_tree(p, forest[p], propRanges.names);
     }
 }
 template <int bits, typename IO>
@@ -730,7 +731,7 @@ void flif_encode_main(RacOut<IO>& rac, IO& io, Images &images, const ColorRanges
 
     //v_printf(2,"Encoding tree\n");
     fs = io.ftell();
-    flif_encode_tree<IO, FLIFBitChanceTree, RacOut<IO>>(io, rac, ranges, forest, encoding, images.size(), options.additional_props);
+    flif_encode_tree<IO, FLIFBitChanceTree, RacOut<IO>>(io, rac, ranges, forest, encoding, images.size(), options.additional_props, options.print_tree);
     v_printf(3," MANIAC tree: %li bytes.\n", io.ftell()-fs);
     options.divisor=0;
     options.min_size=0;

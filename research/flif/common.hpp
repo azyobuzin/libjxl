@@ -397,3 +397,5 @@ inline std::vector<ColorVal> computeGreys(const ColorRanges *ranges) {
     for (int p = 0; p < ranges->numPlanes(); p++) greys.push_back((ranges->min(p)+ranges->max(p))/2);
     return greys;
 }
+
+void print_tree(const int p, const Tree &tree, const std::vector<const char*> &propNames);

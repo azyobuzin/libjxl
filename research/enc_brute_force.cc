@@ -158,7 +158,7 @@ struct Traverse {
         // 効果がないので、単独で出力
         n_completed += child->images.image_indices.size();
         results.push_back(std::move(child->images));
-        progress->report(n_completed + n_images, n_images * 2);
+        if (progress) progress->report(n_completed + n_images, n_images * 2);
       }
     }
 
@@ -168,7 +168,7 @@ struct Traverse {
     if (!node->parent) {
       n_completed += node->images.image_indices.size();
       results.push_back(std::move(node->images));
-      progress->report(n_completed + n_images, n_images * 2);
+      if (progress) progress->report(n_completed + n_images, n_images * 2);
     }
   }
 };

@@ -55,6 +55,8 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
   // https://github.com/FLIF-hub/FLIF/blob/0074d6fd095d27ce81346aa3fbe9bab59105053e/src/flif.cpp#L323
   bool interlaced =
       flif_image.rows() * flif_image.cols() * flif_images.size() >= 10000;
+  options.method.encoding =
+      interlaced ? flifEncoding::interlaced : flifEncoding::nonInterlaced;
 
   int roughZL = 0;
 
@@ -104,9 +106,8 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
 
   // 決定木を出力
   flif_encode_tree<BlobIO, FLIFBitChanceTree, RacOut<BlobIO>>(
-      io, rac, &ranges, forest,
-      interlaced ? flifEncoding::interlaced : flifEncoding::nonInterlaced,
-      flif_images.size(), options.additional_props);
+      io, rac, &ranges, forest, options.method.encoding, flif_images.size(),
+      options.additional_props, options.print_tree);
 
   options.divisor = 0;
   options.min_size = 0;
@@ -125,6 +126,8 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
         FinalPropertySymbolCoder<FLIFBitChancePass2, RacOut<BlobIO>, kBits>>(
         io, rac, flif_images, &ranges, forest, 1, options, progress);
   }
+
+  rac.flush();
 
   // バイト列のコピー
   size_t array_size;

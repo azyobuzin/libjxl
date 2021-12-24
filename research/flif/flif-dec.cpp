@@ -872,24 +872,6 @@ bool flif_decode_FLIF2_pass(IO &io, Rac &rac, Images &images, const ColorRanges 
         return flif_decode_FLIF2_inner<IO,Rac,Coder,ColorRanges>(io, rac, coders, images, ranges, beginZL, endZL, options, transforms, callback, user_data, partial_images, progress);
 }
 
-void print_tree(const int p, const Tree &tree, const std::vector<const char*> propNames) {
-    FILE *f = stderr;
-    fprintf(f, "digraph P%d {\n", p);
-
-    for (uint32_t i = 0; i < tree.size(); i++) {
-        const auto &node = tree[i];
-        if (node.property == -1) {
-            fprintf(f, "N%04u [label=Leaf];\n", i);
-        } else {
-            const char *propName = propNames.at(node.property);
-            fprintf(f, "N%04u [label=\"%s > %d\\nCount: %d\"];\n", i, propName, node.splitval, node.count);
-            fprintf(f, "N%04u -> N%04u [label=\">\"];\nN%04u -> N%04u [label=\"<=\"];\n", i, node.childID, i, node.childID + 1);
-        }
-    }
-
-    fprintf(f, "}\n");
-}
-
 template<typename IO, typename BitChance, typename Rac> bool flif_decode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props, const bool printTree)
 {
     try {

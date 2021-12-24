@@ -129,7 +129,7 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   accum_idx_bytes.emplace_back();
   for (size_t i = 1; i < header_.combined_images.size(); i++) {
     const auto &prev = accum_idx_bytes.back();
-    const auto &ci_info = header_.combined_images[i];
+    const auto &ci_info = header_.combined_images[i - 1];
     accum_idx_bytes.emplace_back(
         prev.first + ci_info.n_images,
         prev.second + ci_info.n_bytes +

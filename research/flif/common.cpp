@@ -250,3 +250,21 @@ std::pair<int, int> plane_zoomlevel(const Image &image, const int beginZL, const
 
     return std::pair<int, int>(p,zl);
 }
+
+void print_tree(const int p, const Tree &tree, const std::vector<const char*> &propNames) {
+    FILE *f = stderr;
+    fprintf(f, "digraph P%d {\n", p);
+
+    for (uint32_t i = 0; i < tree.size(); i++) {
+        const auto &node = tree[i];
+        if (node.property == -1) {
+            fprintf(f, "N%04u [label=Leaf];\n", i);
+        } else {
+            const char *propName = propNames.at(node.property);
+            fprintf(f, "N%04u [label=\"%s > %d\\nCount: %d\"];\n", i, propName, node.splitval, node.count);
+            fprintf(f, "N%04u -> N%04u [label=\">\"];\nN%04u -> N%04u [label=\"<=\"];\n", i, node.childID, i, node.childID + 1);
+        }
+    }
+
+    fprintf(f, "}\n");
+}
