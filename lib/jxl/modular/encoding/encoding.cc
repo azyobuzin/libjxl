@@ -421,7 +421,7 @@ Status ValidateChannelDimensions(const Image &image,
 }
 
 Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
-                     bool read_header, size_t group_id, ModularOptions *options,
+                     size_t group_id, ModularOptions *options,
                      const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map,
                      bool allow_truncated_group, const DecodingRect *rect,
@@ -429,14 +429,12 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   if (image.channel.empty()) return true;
 
   // decode transforms
-  if (read_header) {
-    JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
-    JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
-                header.transforms.size());
-    image.transform = header.transforms;
-    for (Transform &transform : image.transform) {
-      JXL_RETURN_IF_ERROR(transform.MetaApply(image));
-    }
+  JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
+  JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
+              header.transforms.size());
+  image.transform = header.transforms;
+  for (Transform &transform : image.transform) {
+    JXL_RETURN_IF_ERROR(transform.MetaApply(image));
   }
   if (image.error) {
     return JXL_FAILURE("Corrupt file. Aborting.");
@@ -549,8 +547,8 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
   auto dec_status =
-      ModularDecode(br, image, *header, /*read_header=*/true, group_id, options,
-                    tree, code, ctx_map, allow_truncated_group, rect, {});
+      ModularDecode(br, image, *header, group_id, options, tree, code, ctx_map,
+                    allow_truncated_group, rect, {});
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   if (undo_transforms) image.undo_transforms(header->wp_header);
@@ -580,14 +578,17 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 
 namespace research {
 
-jxl::Status ModularDecodeMulti(
-    jxl::BitReader *br, jxl::Image &image, jxl::GroupHeader &header,
-    size_t group_id, jxl::ModularOptions *options, const jxl::Tree *global_tree,
-    const jxl::ANSCode *global_code, const std::vector<uint8_t> *global_ctx_map,
-    const jxl::DecodingRect *rect, const jxl::MultiOptions &multi_options) {
-  return jxl::ModularDecode(br, image, header, false, group_id, options,
-                            global_tree, global_code, global_ctx_map, false,
-                            rect, multi_options);
+using namespace jxl;
+
+Status ModularDecodeMulti(BitReader *br, Image &image, size_t group_id,
+                          ModularOptions *options, const Tree *global_tree,
+                          const ANSCode *global_code,
+                          const std::vector<uint8_t> *global_ctx_map,
+                          const DecodingRect *rect,
+                          const MultiOptions &multi_options) {
+  GroupHeader local_header;
+  return ModularDecode(br, image, local_header, group_id, options, global_tree,
+                       global_code, global_ctx_map, false, rect, multi_options);
 }
 
 }  // namespace research

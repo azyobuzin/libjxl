@@ -13,40 +13,32 @@ using namespace jxl;
 namespace research {
 
 // modular/encoding/encoding.cc で定義
-jxl::Status ModularDecodeMulti(
-    jxl::BitReader *br, jxl::Image &image, jxl::GroupHeader &header,
-    size_t group_id, jxl::ModularOptions *options, const jxl::Tree *global_tree,
-    const jxl::ANSCode *global_code, const std::vector<uint8_t> *global_ctx_map,
-    const jxl::DecodingRect *rect, const jxl::MultiOptions &multi_options);
+Status ModularDecodeMulti(BitReader *br, Image &image, size_t group_id,
+                          ModularOptions *options, const Tree *global_tree,
+                          const ANSCode *global_code,
+                          const std::vector<uint8_t> *global_ctx_map,
+                          const DecodingRect *rect,
+                          const MultiOptions &multi_options);
 
 namespace {
 
 // 8bit しか想定しないことにする
 constexpr int kBitdepth = 8;
 
-Status DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_images,
-                           const MultiOptions &multi_options,
-                           Span<const uint8_t> data, Image &out_image) {
+Status DecodeCombinedImage(const DecodingOptions &decoding_options,
+                           uint32_t n_images, Span<const uint8_t> data,
+                           Image &out_image) {
   BitReader reader(data);
 
   // 決定木
   Tree tree;
-  size_t tree_size_limit =
-      std::min(static_cast<size_t>(1 << 22),
-               1024 + static_cast<size_t>(width) * height *
-                          multi_options.channel_per_image / 16);
+  size_t tree_size_limit = std::min(
+      static_cast<size_t>(1 << 22),
+      1024 + static_cast<size_t>(decoding_options.width) *
+                 decoding_options.height *
+                 decoding_options.multi_options.channel_per_image / 16);
   Status status =
       JXL_STATUS(DecodeTree(&reader, &tree, tree_size_limit), "DecodeTree");
-  if (!status) {
-    reader.Close();
-    return status;
-  }
-
-  // GroupHeader
-  GroupHeader header;
-  Bundle::Init(&header);
-  status =
-      JXL_STATUS(Bundle::Read(&reader, &header), "Bundle::Read(GroupHeader)");
   if (!status) {
     reader.Close();
     return status;
@@ -64,13 +56,15 @@ Status DecodeCombinedImage(uint32_t width, uint32_t height, uint32_t n_images,
   }
 
   // 画像
-  out_image = Image(width, height, kBitdepth,
-                    multi_options.channel_per_image * n_images);
+  out_image =
+      Image(decoding_options.width, decoding_options.height, kBitdepth,
+            decoding_options.multi_options.channel_per_image * n_images);
   ModularOptions options;
+  options.max_properties = decoding_options.refchan;
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
   status = JXL_STATUS(
-      ModularDecodeMulti(&reader, out_image, header, 0, &options, &tree, &code,
-                         &context_map, &dr, multi_options),
+      ModularDecodeMulti(&reader, out_image, 0, &options, &tree, &code,
+                         &context_map, &dr, decoding_options.multi_options),
       "ModularDecodeMulti");
   if (!status) {
     reader.Close();
@@ -100,16 +94,11 @@ Image ImageFromCombined(const Image &combined_image, uint32_t n_channel,
 
 }  // namespace
 
-ClusterFileReader::ClusterFileReader(uint32_t width, uint32_t height,
-                                     uint32_t n_channel, int refchan,
-                                     size_t max_refs, Span<const uint8_t> data)
-    : width_(width),
-      height_(height),
-      refchan_(refchan),
-      header_(width, height, n_channel, /*TODO(research) flif_enabled=*/false) {
-  multi_options_.channel_per_image = n_channel;
-  multi_options_.max_refs = max_refs;
-
+ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
+                                     Span<const uint8_t> data)
+    : options_(options),
+      header_(options.width, options.height,
+              options.multi_options.channel_per_image, options.flif_enabled) {
   BitReader reader(data);
   JXL_CHECK(Bundle::Read(&reader, &header_));
   JXL_CHECK(reader.JumpToByteBoundary());
@@ -142,14 +131,13 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
     auto [idx_offset, bytes_offset] = accum_idx_bytes[i];
     Span<const uint8_t> span(data_.data() + bytes_offset, ci_info.n_bytes);
     Image combined_image;
-    Status decode_status =
-        JXL_STATUS(DecodeCombinedImage(width_, height_, ci_info.n_images,
-                                       multi_options_, span, combined_image),
-                   "failed to decode %" PRIuS, i);
+    Status decode_status = JXL_STATUS(
+        DecodeCombinedImage(options_, ci_info.n_images, span, combined_image),
+        "failed to decode %" PRIuS, i);
     if (decode_status) {
       for (size_t j = 0; j < ci_info.n_images; j++) {
         out_images[reverse_pointer.at(idx_offset + j)] = ImageFromCombined(
-            combined_image, multi_options_.channel_per_image, j);
+            combined_image, options_.multi_options.channel_per_image, j);
       }
     } else {
       // 失敗を記録
@@ -180,11 +168,12 @@ Status ClusterFileReader::Read(size_t idx, Image &out_image) {
     // Found
     Span<const uint8_t> span(data_.data() + accum_bytes, ci_info.n_bytes);
     Image combined_image;
-    Status status = DecodeCombinedImage(width_, height_, ci_info.n_images,
-                                        multi_options_, span, combined_image);
+    Status status =
+        DecodeCombinedImage(options_, ci_info.n_images, span, combined_image);
     if (status) {
-      out_image = ImageFromCombined(
-          combined_image, multi_options_.channel_per_image, idx - accum_idx);
+      out_image = ImageFromCombined(combined_image,
+                                    options_.multi_options.channel_per_image,
+                                    idx - accum_idx);
     }
     return status;
   }

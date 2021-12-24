@@ -11,6 +11,12 @@
 
 namespace research {
 
+struct EncodingOptions {
+  size_t max_refs;
+  bool flif_enabled;
+  int flif_additional_props;
+};
+
 // 複数の画像をまとめた画像
 struct CombinedImage {
   jxl::Image image;

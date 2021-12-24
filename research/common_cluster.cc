@@ -39,14 +39,14 @@ Status CombinedImageInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   // TODO(research): ビット割り当ては検討の余地あり
   JXL_QUIET_RETURN_IF_ERROR(
       visitor->U32(Val(1), BitsOffset(4, 1), BitsOffset(8, 1 + (1 << 4)),
-                   BitsOffset(14, 1 + (1 << 4) + (1 << 8)), 0, &n_images));
+                   BitsOffset(14, 1 + (1 << 4) + (1 << 8)), 1, &n_images));
 
   uint32_t lower_bound, upper_bound;
   U32Enc nb_enc =
       U32EncForNBytes(static_cast<uint64_t>(width_) * height_ *
                           (flif_enabled_ ? 1 : n_channel_) * n_images,
                       &lower_bound, &upper_bound);
-  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(nb_enc, 0, &n_bytes));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(nb_enc, lower_bound, &n_bytes));
 
   if (!visitor->IsReading() &&
       (n_bytes < lower_bound || n_bytes >= upper_bound)) {
@@ -59,7 +59,7 @@ Status CombinedImageInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
     nb_enc =
         U32EncForNBytes(static_cast<uint64_t>(width_) * height_ * 2 * n_images,
                         &lower_bound, &upper_bound);
-    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(nb_enc, 0, &n_flif_bytes));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(nb_enc, lower_bound, &n_flif_bytes));
 
     if (!visitor->IsReading() &&
         (n_flif_bytes < lower_bound || n_flif_bytes >= upper_bound)) {

@@ -153,8 +153,6 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
                                nullptr, 0, 0, nullptr, nullptr, &tree,
                                &group_header, &tokens[0], &image_widths[0]));
 
-  JXL_CHECK(Bundle::Write(group_header, &writer, kLayerHeader, nullptr));
-
   HistogramParams params;
   // TODO(research):
   // LZ77で時間がかかり、オフにしても決定木比較に影響ないならば、kNoneにしたい
@@ -164,6 +162,8 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   std::vector<uint8_t> context_map;
   BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens, &code,
                            &context_map, &writer, 0, nullptr);
+
+  JXL_CHECK(Bundle::Write(group_header, &writer, kLayerHeader, nullptr));
   WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
 }
 

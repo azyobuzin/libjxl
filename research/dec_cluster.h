@@ -6,10 +6,18 @@
 
 namespace research {
 
+struct DecodingOptions {
+  uint32_t width;
+  uint32_t height;
+  jxl::MultiOptions multi_options;
+  int refchan;
+  bool flif_enabled;
+  int flif_additional_props;
+};
+
 class ClusterFileReader {
  public:
-  ClusterFileReader(uint32_t width, uint32_t height, uint32_t n_channel,
-                    int refchan, size_t max_refs,
+  ClusterFileReader(const DecodingOptions& options,
                     jxl::Span<const uint8_t> data);
 
   const ClusterHeader& header() const noexcept { return header_; }
@@ -21,10 +29,7 @@ class ClusterFileReader {
   jxl::Status Read(size_t idx, jxl::Image& out_image);
 
  private:
-  uint32_t width_;
-  uint32_t height_;
-  int refchan_;
-  jxl::MultiOptions multi_options_;
+  const DecodingOptions& options_;
   // ヘッダーを含まないバイト列
   jxl::Span<const uint8_t> data_;
   ClusterHeader header_;

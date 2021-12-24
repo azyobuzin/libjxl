@@ -46,9 +46,9 @@ int main(int argc, char *argv[]) {
   // clang-format off
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
-    ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
+    ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
     ("verify", po::bool_switch(), "エンコード結果をデコードして、一致するかを確認する");
   // clang-format on
@@ -78,10 +78,10 @@ int main(int argc, char *argv[]) {
       vm["image-file"].as<std::vector<std::string>>();
   FileImagesProvider images(paths);
   images.ycocg = true;
-  images.only_first_channel = vm["y-only"].as<bool>();
 
   int refchan = vm["refchan"].as<uint16_t>();
   size_t max_refs = vm["max-refs"].as<size_t>();
+  bool flif_enabled = vm["flif"].as<bool>();
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -150,8 +150,10 @@ int main(int argc, char *argv[]) {
       // ClusterFile形式から読み出す
       std::string buf = oss.str();
       jxl::Span<const uint8_t> span(buf);
-      ClusterFileReader reader(width, height, n_channel, refchan, max_refs,
-                               span);
+      DecodingOptions options{
+          width,   height,       {n_channel, max_refs},
+          refchan, flif_enabled, /*flif_additional_props=*/0};
+      ClusterFileReader reader(options, span);
       if (!reader.ReadAll(decoded_images)) {
         std::cerr << "Failed to decode images" << std::endl;
         return 1;
