@@ -173,26 +173,28 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
 
   // 1枚目からデータを収集
   uint32_t width, height, n_channel;
+  bool flif_enabled;
   {
     const auto &first_image = combined_images[0].included_images.at(0);
     width = first_image->w;
     height = first_image->h;
     n_channel = first_image->channel.size() - first_image->nb_meta_channels;
+    flif_enabled = !combined_images[0].flif_data.empty();
   }
 
   // ヘッダー作成
-  ClusterHeader header(width, height, n_channel,
-                       /*TODO(research) flif_enabled=*/false);
+  ClusterHeader header(width, height, n_channel, flif_enabled);
   size_t n_images = 0;
 
   header.combined_images.reserve(combined_images.size());
   for (const auto &ci : combined_images) {
     auto &ci_info = header.combined_images.emplace_back(
-        width, height, n_channel, /*TODO(research) flif_enabled=*/false);
+        width, height, n_channel, flif_enabled);
     JXL_ASSERT(ci.image_indices.size() == ci.included_images.size());
     n_images += ci.image_indices.size();
     ci_info.n_images = static_cast<uint32_t>(ci.image_indices.size());
     ci_info.n_bytes = static_cast<uint32_t>(ci.data.size());
+    ci_info.n_flif_bytes = static_cast<uint32_t>(ci.flif_data.size());
   }
 
   header.pointers.resize(n_images);
@@ -214,6 +216,11 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
   // 画像を書き込む
   for (const auto &ci : combined_images) {
     dst.write(reinterpret_cast<const char *>(ci.data.data()), ci.data.size());
+
+    if (flif_enabled) {
+      dst.write(reinterpret_cast<const char *>(ci.flif_data.data()),
+                ci.flif_data.size());
+    }
   }
 }
 

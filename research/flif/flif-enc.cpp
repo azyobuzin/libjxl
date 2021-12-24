@@ -205,7 +205,7 @@ void flif_encode_FLIF2_inner(IO& io, Rac& rac, std::vector<Coder> &coders, const
     long fs = io.ftell();
     UniformSymbolCoder<Rac> metaCoder(rac);
     const bool default_order = (options.chroma_subsampling==0);
-    metaCoder.write_int(0, 1, (default_order? 1 : 0)); // we're using the default zoomlevel/plane ordering
+    JXL_CHECK(default_order); // 順番入れ替えには対応したくない
     for (int p=1; p<nump; p++) metaCoder.write_int(-1, MAX_PREDICTOR, the_predictor[p]);
     for (int i = 0; i < plane_zoomlevels(images[0], beginZL, endZL); i++) {
       std::pair<int, int> pzl = plane_zoomlevel(images[0], beginZL, endZL, i, ranges);

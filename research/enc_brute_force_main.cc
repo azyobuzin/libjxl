@@ -49,6 +49,7 @@ int main(int argc, char *argv[]) {
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
+    ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
     ("verify", po::bool_switch(), "エンコード結果をデコードして、一致するかを確認する");
   // clang-format on
@@ -82,6 +83,7 @@ int main(int argc, char *argv[]) {
   int refchan = vm["refchan"].as<uint16_t>();
   size_t max_refs = vm["max-refs"].as<size_t>();
   bool flif_enabled = vm["flif"].as<bool>();
+  int flif_learn_repeats = vm["flif-learn"].as<int>();
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -94,10 +96,13 @@ int main(int argc, char *argv[]) {
 
   auto tree = CreateTree(images, options);
 
+  EncodingOptions encoding_options{max_refs, flif_enabled, flif_learn_repeats};
+
   std::vector<EncodedCombinedImage> results;
   {
     ConsoleProgressReporter progress("Encoding");
-    results = EncodeWithBruteForce(images, tree, options, max_refs, &progress);
+    results = EncodeWithBruteForce(images, tree, options, encoding_options,
+                                   &progress);
   }
 
   for (const auto &x : results) {
@@ -112,7 +117,9 @@ int main(int argc, char *argv[]) {
       std::cout << images.get_label(image_idx);
     }
 
-    std::cout << std::endl << "bits: " << x.n_bits << std::endl << std::endl;
+    std::cout << std::endl
+              << "bytes: " << x.n_bytes() << std::endl
+              << std::endl;
   }
 
   if (!vm["out"].empty()) {

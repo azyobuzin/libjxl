@@ -3,6 +3,7 @@
 #include <fmt/core.h>
 #include <tbb/parallel_for.h>
 
+#include "dec_flif.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
@@ -26,21 +27,26 @@ namespace {
 constexpr int kBitdepth = 8;
 
 Status DecodeCombinedImage(const DecodingOptions &decoding_options,
-                           uint32_t n_images, Span<const uint8_t> data,
-                           Image &out_image) {
-  BitReader reader(data);
+                           Span<const uint8_t> jxl_data,
+                           Span<const uint8_t> flif_data,
+                           std::vector<Image> &out_images) {
+  // FLIF がある場合は、Yチャネルのみ JPEG XL になっている
+  MultiOptions multi_options = decoding_options.multi_options;
+  if (decoding_options.flif_enabled) multi_options.channel_per_image = 1;
+
+  BitReader reader(jxl_data);
 
   // 決定木
   Tree tree;
-  size_t tree_size_limit = std::min(
-      static_cast<size_t>(1 << 22),
-      1024 + static_cast<size_t>(decoding_options.width) *
-                 decoding_options.height *
-                 decoding_options.multi_options.channel_per_image / 16);
+  size_t tree_size_limit =
+      std::min(static_cast<size_t>(1 << 22),
+               1024 + static_cast<size_t>(decoding_options.width) *
+                          decoding_options.height *
+                          multi_options.channel_per_image / 16);
   Status status =
       JXL_STATUS(DecodeTree(&reader, &tree, tree_size_limit), "DecodeTree");
   if (!status) {
-    reader.Close();
+    [[maybe_unused]] auto ignored = reader.Close();
     return status;
   }
 
@@ -51,45 +57,50 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
       DecodeHistograms(&reader, (tree.size() + 1) / 2, &code, &context_map),
       "DecodeHistograms");
   if (!status) {
-    reader.Close();
+    [[maybe_unused]] auto ignored = reader.Close();
     return status;
   }
 
   // 画像
-  out_image =
-      Image(decoding_options.width, decoding_options.height, kBitdepth,
-            decoding_options.multi_options.channel_per_image * n_images);
+  Image ci(decoding_options.width, decoding_options.height, kBitdepth,
+           multi_options.channel_per_image * out_images.size());
   ModularOptions options;
   options.max_properties = decoding_options.refchan;
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
-  status = JXL_STATUS(
-      ModularDecodeMulti(&reader, out_image, 0, &options, &tree, &code,
-                         &context_map, &dr, decoding_options.multi_options),
-      "ModularDecodeMulti");
+  status = JXL_STATUS(ModularDecodeMulti(&reader, ci, 0, &options, &tree, &code,
+                                         &context_map, &dr, multi_options),
+                      "ModularDecodeMulti");
   if (!status) {
-    reader.Close();
+    [[maybe_unused]] auto ignored = reader.Close();
     return status;
   }
 
   if (!reader.JumpToByteBoundary() ||
-      reader.TotalBitsConsumed() != data.size() * kBitsPerByte) {
-    reader.Close();
+      reader.TotalBitsConsumed() != jxl_data.size() * kBitsPerByte) {
+    [[maybe_unused]] auto ignored = reader.Close();
     return JXL_STATUS(false, "読み残しがあります");
   }
 
   JXL_RETURN_IF_ERROR(reader.Close());
-  return true;
-}
 
-Image ImageFromCombined(const Image &combined_image, uint32_t n_channel,
-                        uint32_t idx) {
-  Image result(combined_image.w, combined_image.h, combined_image.bitdepth,
-               n_channel);
-  for (uint32_t c = 0; c < n_channel; c++) {
-    CopyImageTo(combined_image.channel.at(idx * n_channel + c).plane,
-                &result.channel[c].plane);
+  // チャネルを切り出す
+  for (size_t i = 0; i < out_images.size(); i++) {
+    auto &dst = out_images[i];
+    dst = Image(ci.w, ci.h, ci.bitdepth, multi_options.channel_per_image);
+
+    for (uint32_t c = 0; c < multi_options.channel_per_image; c++) {
+      CopyImageTo(ci.channel.at(i * multi_options.channel_per_image + c).plane,
+                  &dst.channel.at(c).plane);
+    }
   }
-  return result;
+
+  // FLIF のデコード
+  if (decoding_options.flif_enabled) {
+    JXL_RETURN_IF_ERROR(DecodeColorSignalWithFlif(
+        out_images, flif_data, decoding_options.flif_additional_props));
+  }
+
+  return true;
 }
 
 }  // namespace
@@ -118,9 +129,11 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   accum_idx_bytes.emplace_back();
   for (size_t i = 1; i < header_.combined_images.size(); i++) {
     const auto &prev = accum_idx_bytes.back();
+    const auto &ci_info = header_.combined_images[i];
     accum_idx_bytes.emplace_back(
-        prev.first + header_.combined_images[i].n_images,
-        prev.second + header_.combined_images[i].n_bytes);
+        prev.first + ci_info.n_images,
+        prev.second + ci_info.n_bytes +
+            (options_.flif_enabled ? ci_info.n_flif_bytes : 0));
   }
 
   std::atomic<Status> status = Status(true);
@@ -129,15 +142,20 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   tbb::parallel_for(size_t(0), accum_idx_bytes.size(), [&](size_t i) {
     const auto &ci_info = header_.combined_images[i];
     auto [idx_offset, bytes_offset] = accum_idx_bytes[i];
-    Span<const uint8_t> span(data_.data() + bytes_offset, ci_info.n_bytes);
-    Image combined_image;
-    Status decode_status = JXL_STATUS(
-        DecodeCombinedImage(options_, ci_info.n_images, span, combined_image),
-        "failed to decode %" PRIuS, i);
+
+    Span<const uint8_t> jxl_span(data_.data() + bytes_offset, ci_info.n_bytes);
+    Span<const uint8_t> flif_span(data_.data() + bytes_offset + ci_info.n_bytes,
+                                  ci_info.n_flif_bytes);
+
+    std::vector<Image> images(ci_info.n_images);
+    Status decode_status =
+        JXL_STATUS(DecodeCombinedImage(options_, jxl_span, flif_span, images),
+                   "failed to decode %" PRIuS, i);
+
     if (decode_status) {
       for (size_t j = 0; j < ci_info.n_images; j++) {
-        out_images[reverse_pointer.at(idx_offset + j)] = ImageFromCombined(
-            combined_image, options_.multi_options.channel_per_image, j);
+        out_images[reverse_pointer.at(idx_offset + j)] =
+            std::move(images.at(j));
       }
     } else {
       // 失敗を記録
@@ -162,18 +180,18 @@ Status ClusterFileReader::Read(size_t idx, Image &out_image) {
     if (idx >= accum_idx + ci_info.n_images) {
       accum_idx += ci_info.n_images;
       accum_bytes += ci_info.n_bytes;
+      if (options_.flif_enabled) accum_bytes += ci_info.n_flif_bytes;
       continue;
     }
 
     // Found
-    Span<const uint8_t> span(data_.data() + accum_bytes, ci_info.n_bytes);
-    Image combined_image;
-    Status status =
-        DecodeCombinedImage(options_, ci_info.n_images, span, combined_image);
+    Span<const uint8_t> jxl_span(data_.data() + accum_bytes, ci_info.n_bytes);
+    Span<const uint8_t> flif_span(data_.data() + accum_bytes + ci_info.n_bytes,
+                                  ci_info.n_flif_bytes);
+    std::vector<Image> images(ci_info.n_images);
+    Status status = DecodeCombinedImage(options_, jxl_span, flif_span, images);
     if (status) {
-      out_image = ImageFromCombined(combined_image,
-                                    options_.multi_options.channel_per_image,
-                                    idx - accum_idx);
+      out_image = std::move(images.at(idx - accum_idx));
     }
     return status;
   }

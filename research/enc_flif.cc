@@ -13,8 +13,8 @@ constexpr int kBits = 10;
 constexpr int kChannel = 3;
 
 jxl::PaddedBytes EncodeColorSignalWithFlif(
-    const std::vector<jxl::Image>& images, int learn_repeats,
-    int additional_props) {
+    const std::vector<std::shared_ptr<const jxl::Image>>& images,
+    int learn_repeats, int additional_props) {
   JXL_CHECK(images.size() > 0);
 
   flif_options options = FLIF_DEFAULT_OPTIONS;
@@ -25,12 +25,12 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
   Images flif_images;
   flif_images.reserve(images.size());
   for (const auto& image : images) {
-    JXL_CHECK(image.channel.size() - image.nb_meta_channels == kChannel);
+    JXL_CHECK(image->channel.size() - image->nb_meta_channels == kChannel);
     auto& flif_image =
-        flif_images.emplace_back(image.w, image.h, 0, 255, kChannel);
+        flif_images.emplace_back(image->w, image->h, 0, 255, kChannel);
 
     for (size_t chan = 0; chan < kChannel; chan++) {
-      const auto& src = image.channel[image.nb_meta_channels + chan];
+      const auto& src = image->channel[image->nb_meta_channels + chan];
       auto& dst = flif_image.getPlane(chan);
       for (size_t y = 0; y < src.h; y++) {
         const auto& src_row = src.Row(y);

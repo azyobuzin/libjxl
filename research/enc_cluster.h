@@ -14,6 +14,7 @@ namespace research {
 struct EncodingOptions {
   size_t max_refs;
   bool flif_enabled;
+  int flif_learn_repeats;
   int flif_additional_props;
 };
 
@@ -31,6 +32,9 @@ struct EncodedCombinedImage {
   jxl::PaddedBytes data;
   // 書き込まれたビット数
   size_t n_bits;
+  jxl::PaddedBytes flif_data;
+
+  size_t n_bytes() const noexcept { return data.size() + flif_data.size(); }
 };
 
 CombinedImage CombineImage(jxl::Image &&image);

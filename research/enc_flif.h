@@ -8,6 +8,7 @@
 namespace research {
 
 jxl::PaddedBytes EncodeColorSignalWithFlif(
-    const std::vector<jxl::Image>& images, int learn_repeats);
+    const std::vector<std::shared_ptr<const jxl::Image>>& images,
+    int learn_repeats, int additional_props);
 
 }

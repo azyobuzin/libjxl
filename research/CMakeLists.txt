@@ -15,13 +15,21 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   cost_graph_enc.cc
   common_cluster.cc
   dec_cluster.cc
+  dec_flif.cc
   enc_brute_force.cc
   enc_cluster.cc
   enc_flif.cc
   images_provider.cc
   progress.cc
   prop_extract.cc
+  flif/common.cpp
+  flif/io.cpp
   flif/image/color_range.cpp
+  flif/image/crc32k.cpp
+  flif/maniac/bit.cpp
+  flif/maniac/chance.cpp
+  flif/maniac/symbol.cpp
+  flif/transform/factory.cpp
 )
 target_compile_options(research PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(research jxl-static fmt::fmt ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})

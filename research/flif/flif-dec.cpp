@@ -199,7 +199,7 @@ bool flif_decode_scanlines_inner(IO &io, FLIF_UNUSED(Rac &rac), std::vector<Code
 
     for (int k=0,i=0; k < 5; k++) {
         int p=PLANE_ORDERING[k];
-        if (p>=nump) continue;
+        if (p>=nump || p==0) continue;
         i++;
         Properties properties(nb_properties_scanlines(p, nump, images.size(), options.additional_props));
         if ((100*progress.pixels_done > options.quality*progress.pixels_todo)) {
@@ -208,7 +208,7 @@ bool flif_decode_scanlines_inner(IO &io, FLIF_UNUSED(Rac &rac), std::vector<Code
         }
         if (ranges->min(p) < ranges->max(p)) {
           const ColorVal minP = ranges->min(p);
-          v_printf_tty(2,"\r%i%% done [%i/%i] DEC[%ux%u]    ",(int)(100*progress.pixels_done/progress.pixels_todo),i,nump,images[0].cols(),images[0].rows());
+          v_printf_tty(2,"\r%i%% done [%i/%i] DEC[%ux%u]    ",(int)(100*progress.pixels_done/progress.pixels_todo),i,nump-1,images[0].cols(),images[0].rows());
           v_printf_tty(4,"\n");
           progress.pixels_done += images[0].cols()*images[0].rows();
           for (uint32_t r = 0; r < images[0].rows(); r++) {
@@ -698,10 +698,10 @@ bool flif_decode_FLIF2_inner(IO& io, Rac &rac, std::vector<Coder> &coders, Image
     // flif_decode
     UniformSymbolCoder<Rac> metaCoder(rac);
     std::vector<int> zoomlevels(nump, beginZL);
-    const bool default_order = metaCoder.read_int(0, 1);
+    const bool default_order = true;
     int the_predictor[5] = {0,0,0,0,0};
     int breakpoints = options.show_breakpoints;
-    for (int p=0; p<nump; p++) the_predictor[p] = metaCoder.read_int(-1, MAX_PREDICTOR+1);
+    for (int p=1; p<nump; p++) the_predictor[p] = metaCoder.read_int(-1, MAX_PREDICTOR+1);
     for (int i = 0; i < plane_zoomlevels(images[0], beginZL, endZL); i++) {
       int p;
       if (default_order) {
@@ -721,6 +721,7 @@ bool flif_decode_FLIF2_inner(IO& io, Rac &rac, std::vector<Coder> &coders, Image
         }
 #endif
       }
+      if (p == 0) continue;
       int z = zoomlevels[p];
       if (z < 0) {e_printf("Corrupt file: invalid plane/zoomlevel\n"); return false;}
       if (100*progress.pixels_done > quality*progress.pixels_todo && endZL==0) {
@@ -847,7 +848,7 @@ bool flif_decode_FLIF2_pass(IO &io, Rac &rac, Images &images, const ColorRanges 
       // special case: very left top pixel must be read first to get it all started
       // SimpleSymbolCoder<FLIFBitChanceMeta, Rac, 24> metaCoder(rac);
       UniformSymbolCoder<Rac> metaCoder(rac);
-      for (int p = 0; p < images[0].numPlanes(); p++) {
+      for (int p = 1; p < images[0].numPlanes(); p++) {
         if (ranges->min(p) < ranges->max(p)) {
           for (size_t fr = 0; fr < images.size(); fr++) {
               Image& image = images[fr];
@@ -892,7 +893,7 @@ void print_tree(const int p, const Tree &tree, const std::vector<const char*> pr
 template<typename IO, typename BitChance, typename Rac> bool flif_decode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props, const bool printTree)
 {
     try {
-      for (int p = 0; p < ranges->numPlanes(); p++) {
+      for (int p = 1; p < ranges->numPlanes(); p++) {
         PropNamesAndRanges propRanges;
         if (encoding==flifEncoding::nonInterlaced) initPropRanges_scanlines(propRanges, *ranges, p, nb_frames, additional_props);
         else initPropRanges(propRanges, *ranges, p, nb_frames, additional_props);
