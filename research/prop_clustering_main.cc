@@ -8,7 +8,10 @@
 #include <iostream>
 #include <mlpack/core.hpp>
 #include <mlpack/methods/kmeans/kmeans.hpp>
+#include <set>
+#include <unordered_map>
 
+#include "cocbo.h"
 #include "prop_extract.h"
 
 namespace fs = std::filesystem;
@@ -32,7 +35,9 @@ int main(int argc, char *argv[]) {
     ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
-    ("k", po::value<uint16_t>()->default_value(2), "クラスタ数")
+    ("method", po::value<std::string>()->default_value("kmeans"), "kmeans or cocbo")
+    ("k", po::value<uint16_t>()->default_value(2), "kmeansの場合はクラスタ数。cocboの場合はクラスタあたりの画像数")
+    ("margin", po::value<uint16_t>()->default_value(2), "(cocbo) kのマージン")
     ("copy-to", po::value<fs::path>(), "クラスタリングされた画像をディレクトリにコピーする");
   // clang-format on
 
@@ -58,7 +63,9 @@ int main(int argc, char *argv[]) {
 
   const size_t split = vm["split"].as<uint16_t>();
   const float fraction = vm["fraction"].as<float>();
+  const std::string &method = vm["method"].as<std::string>();
   const size_t k = vm["k"].as<uint16_t>();
+  const int margin = vm["margin"].as<uint16_t>();
 
   const std::vector<std::string> &paths =
       vm["image-file"].as<std::vector<std::string>>();
@@ -92,12 +99,25 @@ int main(int argc, char *argv[]) {
   });
 
   // クラスタリング
-  KMeans<> model;
   arma::Row<size_t> assignments;
-  model.Cluster(prop_mat, k, assignments);
+  if (method == "kmeans") {
+    KMeans<> model;
+    model.Cluster(prop_mat, k, assignments);
+  } else if (method == "cocbo") {
+    ClusterWithCocbo(prop_mat, k, std::max(static_cast<int>(k) - margin, 1),
+                     k + 1 + margin, assignments);
+  } else {
+    std::cerr << "method is invalid" << std::endl;
+    return 1;
+  }
+
   JXL_ASSERT(assignments.size() == paths.size());
 
-  for (size_t i = 0; i < k; i++) {
+  std::set<size_t> available_clusters;
+  for (size_t i = 0; i < assignments.size(); i++)
+    available_clusters.insert(assignments[i]);
+
+  for (size_t i : available_clusters) {
     std::cout << "=== Cluster " << i << " ===" << std::endl;
     for (size_t j = 0; j < paths.size(); j++) {
       if (assignments[j] == i) std::cout << paths[j] << std::endl;
@@ -108,12 +128,13 @@ int main(int argc, char *argv[]) {
   if (!vm["copy-to"].empty()) {
     // 出力先ディレクトリ作成
     const fs::path &dst_dir = vm["copy-to"].as<fs::path>();
-    std::vector<fs::path> dst_dirs;
+    std::unordered_map<size_t, fs::path> dst_dirs;
     dst_dirs.reserve(k);
-    for (size_t i = 0; i < k; i++) {
-      const auto &d =
-          dst_dirs.emplace_back(dst_dir / fmt::format("cluster{:02}", i));
-      fs::create_directories(d);
+    for (size_t i : available_clusters) {
+      const auto p =
+          dst_dirs.emplace(i, dst_dir / fmt::format("cluster{:02}", i));
+      JXL_ASSERT(p.second);
+      fs::create_directories(p.first->second);
     }
 
     // クラスタごとのディレクトリにコピー
