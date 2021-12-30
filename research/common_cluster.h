@@ -40,9 +40,7 @@ struct ClusterHeader : public jxl::Fields {
       : width_(width),
         height_(height),
         n_channel_(n_channel),
-        flif_enabled_(flif_enabled) {
-    jxl::Bundle::Init(this);
-  }
+        flif_enabled_(flif_enabled) {}
 
 #if JXL_IS_DEBUG_BUILD
   const char* Name() const override { return "research::ClusterHeader"; }
@@ -60,6 +58,24 @@ struct ClusterHeader : public jxl::Fields {
   uint32_t height_;
   uint32_t n_channel_;
   bool flif_enabled_;
+};
+
+struct IndexFields : public jxl::Fields {
+  IndexFields() { jxl::Bundle::Init(this); }
+
+#if JXL_IS_DEBUG_BUILD
+  const char* Name() const override { return "research::IndexFields"; }
+#endif
+
+  jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
+
+  uint32_t width;
+  uint32_t height;
+  uint32_t n_channel;
+  uint32_t n_clusters;
+
+  // i番目の画像がどのクラスタにあるか
+  std::vector<uint32_t> assignments;
 };
 
 }  // namespace research

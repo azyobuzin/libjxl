@@ -13,11 +13,16 @@ namespace research {
 void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
                       size_t upper_bound, arma::Row<size_t>& assignments,
                       size_t max_iterations) {
-  JXL_CHECK(lower_bound > 0 && lower_bound <= k);
+  JXL_CHECK(k > 0);
+  JXL_CHECK(lower_bound <= k);
   JXL_CHECK(upper_bound >= k + 1);
 
   size_t n_cluster = std::max<size_t>(data.n_cols / k, 1);
   JXL_CHECK(n_cluster <= data.n_cols);
+
+  glp_smcp glp_param;
+  glp_init_smcp(&glp_param);
+  glp_param.msg_lev = GLP_MSG_ERR;
 
   glp_prob* lp = glp_create_prob();
   glp_set_prob_name(lp, "COCBO");
@@ -81,7 +86,7 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
     }
 
     // 最適化
-    int solve_result = glp_simplex(lp, nullptr);
+    int solve_result = glp_simplex(lp, &glp_param);
     if (solve_result != 0) JXL_ABORT("glp_simplex returned %d", solve_result);
 
     // 結果取得

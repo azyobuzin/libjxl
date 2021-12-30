@@ -131,4 +131,33 @@ Status ClusterHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   return true;
 }
 
+Status IndexFields::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  // https://github.com/libjxl/libjxl/blob/1d62c5fc07ec2bcb4baed46cc4b6e4611c714602/lib/jxl/frame_header.cc#L259-L260
+  const U32Enc enc(BitsOffset(8, 1), BitsOffset(11, 1 + (1 << 8)),
+                   BitsOffset(14, 1 + (1 << 8) + (1 << 11)),
+                   BitsOffset(30, 1 + (1 << 8) + (1 << 11) + (1 << 14)));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 1, &width));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 1, &height));
+
+  bool is_color = n_channel == 3;
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &is_color));
+  n_channel = is_color ? 3 : 1;
+
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 1, &n_clusters));
+
+  uint32_t n_images = assignments.size();
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &n_images));
+
+  if (visitor->IsReading()) assignments.resize(n_images);
+
+  // TODO(research): もっと効率よくならない？
+  size_t ic_bits = bit_width(n_clusters - 1);
+
+  for (uint32_t i = 0; i < n_images; i++) {
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(ic_bits, 0, &assignments[i]));
+  }
+
+  return true;
+}
+
 }  // namespace research

@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
   } catch (const po::error &e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: prop_kmeans [OPTIONS] IMAGE_FILE..." << std::endl
+              << "Usage: prop_clustering [OPTIONS] IMAGE_FILE..." << std::endl
               << ops_desc << std::endl;
     return 1;
   }
@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
     KMeans<> model;
     model.Cluster(prop_mat, k, assignments);
   } else if (method == "cocbo") {
-    ClusterWithCocbo(prop_mat, k, std::max(static_cast<int>(k) - margin, 1),
+    ClusterWithCocbo(prop_mat, k, std::max(static_cast<int>(k) - margin, 0),
                      k + 1 + margin, assignments);
   } else {
     std::cerr << "method is invalid" << std::endl;

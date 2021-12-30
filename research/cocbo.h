@@ -2,8 +2,6 @@
 
 #include <mlpack/core.hpp>
 
-#include "lib/jxl/base/status.h"
-
 namespace research {
 
 // COCBO法によるクラスタリング

@@ -126,14 +126,15 @@ int main(int argc, char *argv[]) {
     const auto &out_path = vm["out"].as<std::string>();
     std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
     if (!dst) {
-      std::cerr << "Failed to open " << out_path << std::endl;
+      std::cerr << "Failed to open " << out_path.c_str() << std::endl;
       return 1;
     }
 
     PackToClusterFile(results, dst);
+    dst.flush();
 
     if (!dst) {
-      std::cerr << "Failed to write " << out_path << std::endl;
+      std::cerr << "Failed to write " << out_path.c_str() << std::endl;
       return 1;
     }
   }
@@ -173,12 +174,23 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
+    images.ycocg = false;
+
     std::atomic_size_t n_completed = 0;
     std::atomic_bool mismatch = false;
 
     tbb::parallel_for(size_t(0), decoded_images.size(), [&](size_t i) {
-      const auto &decoded_image = decoded_images[i];
+      auto &decoded_image = decoded_images[i];
       const auto expected_image = images.get(i);
+
+      if (decoded_image.channel.size() - decoded_image.nb_meta_channels == 3) {
+        // YCoCg → RGB
+        auto &ycocg_transform =
+            decoded_image.transform.emplace_back(jxl::TransformId::kRCT);
+        ycocg_transform.rct_type = 6;
+        ycocg_transform.begin_c = decoded_image.nb_meta_channels;
+        decoded_image.undo_transforms({}, nullptr);
+      }
 
       if (decoded_image.channel.size() != expected_image.channel.size()) {
         fmt::print(std::cerr,
