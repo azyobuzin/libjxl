@@ -21,10 +21,10 @@ struct EncodingTree {
 };
 
 EncodedCombinedImage ComputeEncodedBits(
-    std::vector<std::shared_ptr<const jxl::Image>> images,
-    std::vector<uint32_t> image_indices, const jxl::ModularOptions &options,
+    std::vector<std::shared_ptr<const Image>> images,
+    std::vector<uint32_t> image_indices, const ModularOptions &options_in,
     const EncodingOptions &encoding_options) {
-  std::vector<std::shared_ptr<const jxl::Image>> jxl_images;
+  std::vector<std::shared_ptr<const Image>> jxl_images;
 
   if (encoding_options.flif_enabled) {
     jxl_images.reserve(images.size());
@@ -40,6 +40,7 @@ EncodedCombinedImage ComputeEncodedBits(
 
   CombinedImage ci = CombineImage(jxl_images);
   BitWriter writer;
+  ModularOptions options = options_in;
   Tree tree = LearnTree(writer, ci, options, encoding_options.max_refs);
   EncodeImages(writer, ci, options, encoding_options.max_refs, tree);
   size_t n_bits = writer.BitsWritten();
@@ -59,7 +60,7 @@ EncodedCombinedImage ComputeEncodedBits(
 // MSTをとりあえず1枚ずつ圧縮した形式にする
 std::shared_ptr<EncodingTree> CreateEncodingTree(
     std::shared_ptr<const ImageTree<size_t>> root, ImagesProvider &images,
-    const jxl::ModularOptions &options, const EncodingOptions &encoding_options,
+    const ModularOptions &options, const EncodingOptions &encoding_options,
     ProgressReporter *progress) {
   std::atomic_size_t n_completed = 0;
   std::vector<EncodedCombinedImage> encoded_data(images.size());
@@ -70,9 +71,9 @@ std::shared_ptr<EncodingTree> CreateEncodingTree(
   // 後ですべて使うので並列にやっておく
   tbb::parallel_for(
       uint32_t(0), static_cast<uint32_t>(encoded_data.size()), [&](uint32_t i) {
-        encoded_data[i] = ComputeEncodedBits(
-            {std::make_shared<const jxl::Image>(images.get(i))}, {i}, options,
-            encoding_options);
+        encoded_data[i] =
+            ComputeEncodedBits({std::make_shared<const Image>(images.get(i))},
+                               {i}, options, encoding_options);
         if (progress) progress->report(++n_completed, encoded_data.size() * 2);
       });
 
@@ -111,13 +112,13 @@ std::shared_ptr<EncodingTree> CreateEncodingTree(
 
 struct Traverse {
   size_t n_images;
-  const jxl::ModularOptions &options;
+  const ModularOptions &options;
   const EncodingOptions &encoding_options;
   ProgressReporter *progress;
   tbb::concurrent_vector<EncodedCombinedImage> results;
   std::atomic_size_t n_completed;
 
-  Traverse(size_t n_images, const jxl::ModularOptions &options,
+  Traverse(size_t n_images, const ModularOptions &options,
            const EncodingOptions &encoding_options, ProgressReporter *progress)
       : n_images(n_images),
         options(options),
@@ -177,7 +178,7 @@ struct Traverse {
 
 std::vector<EncodedCombinedImage> EncodeWithBruteForce(
     ImagesProvider &images, std::shared_ptr<const ImageTree<size_t>> root,
-    const jxl::ModularOptions &options, const EncodingOptions &encoding_options,
+    const ModularOptions &options, const EncodingOptions &encoding_options,
     ProgressReporter *progress) {
   Traverse traverse(images.size(), options, encoding_options, progress);
   traverse(

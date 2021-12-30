@@ -405,7 +405,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   GroupHeader header_storage;
   if (header == nullptr) header = &header_storage;
   Bundle::Init(header);
-  if (options.predictor == Predictor::Weighted) {
+  if (options.predictor == Predictor::Weighted ||
+      options.predictor == Predictor::Best ||
+      options.predictor == Predictor::Variable) {
     weighted::PredictorMode(options.wp_mode, &header->wp_header);
   }
   header->transforms = image.transform;

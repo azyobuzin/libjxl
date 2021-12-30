@@ -21,6 +21,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   enc_cluster.cc
   enc_flif.cc
   images_provider.cc
+  jxl_parallel.cc
   progress.cc
   prop_extract.cc
   flif/common.cpp

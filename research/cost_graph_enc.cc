@@ -16,13 +16,15 @@ typedef BidirectionalCostGraph<size_t> G;
 
 struct LearnedTree {
   Tree tree;
+  int wp_mode;
   size_t n_bits;
 };
 
-LearnedTree LearnTree(Image image, const ModularOptions &options) {
+LearnedTree LearnTree(Image image, const ModularOptions &options_in) {
   BitWriter writer;
+  ModularOptions options = options_in;
   Tree tree = LearnTree(writer, CombineImage(std::move(image)), options, 0);
-  return {tree, writer.BitsWritten()};
+  return {tree, options.wp_mode, writer.BitsWritten()};
 }
 
 size_t ComputeEncodedBits(Image image, const ModularOptions &options,
@@ -63,11 +65,13 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
     size_t dst_idx = (n_images - 1) * i;
     const auto &tree_lhs = learned_trees[i];
+    ModularOptions local_options = options;
+    local_options.wp_mode = tree_lhs.wp_mode;
 
     // 自分自身の決定木で圧縮した場合
     self_costs[i] =
         tree_lhs.n_bits +
-        ComputeEncodedBits(images[i].clone(), options, tree_lhs.tree);
+        ComputeEncodedBits(images[i].clone(), local_options, tree_lhs.tree);
 
     // この決定木で他の画像を圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
@@ -75,7 +79,7 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
 
       edges[dst_idx] = {i, j};
       costs[dst_idx] =
-          ComputeEncodedBits(images[j].clone(), options, tree_lhs.tree);
+          ComputeEncodedBits(images[j].clone(), local_options, tree_lhs.tree);
       dst_idx++;
 
       completed_jobs++;

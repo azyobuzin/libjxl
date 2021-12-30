@@ -7,6 +7,12 @@
 
 using namespace jxl;
 
+namespace jxl {
+
+float EstimateWPCost(const Image &img, size_t i);
+
+}
+
 namespace research {
 
 namespace {
@@ -33,6 +39,20 @@ void ApplyPropertiesOption(ModularOptions &options,
 }
 
 }  // namespace
+
+int FindBestWPMode(const Image &image) {
+  // https://github.com/libjxl/libjxl/blob/3d077b281fa65eab595447ae38ba9efc385ba03e/lib/jxl/enc_modular.cc#L1375-L1383
+  float best_cost = std::numeric_limits<float>::max();
+  int wp_mode = 0;
+  for (size_t i = 0; i < 5; i++) {
+    float cost = EstimateWPCost(image, i);
+    if (cost < best_cost) {
+      best_cost = cost;
+      wp_mode = i;
+    }
+  }
+  return wp_mode;
+}
 
 CombinedImage::CombinedImage(Image image, size_t n_images)
     : n_images(n_images) {
@@ -84,12 +104,12 @@ Status ModularEncodeMulti(
     std::vector<Token> *tokens = nullptr, size_t *width = nullptr);
 
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
-               const ModularOptions &options_in, size_t max_refs) {
+               ModularOptions &options, size_t max_refs) {
   MultiOptions multi_options{
       (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
       std::min(max_refs, ci.n_images - 1)};
-  ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
+  options.wp_mode = FindBestWPMode(ci.image);
 
   TreeSamples tree_samples;
   if (!tree_samples.SetPredictor(options.predictor, options.wp_tree_mode))

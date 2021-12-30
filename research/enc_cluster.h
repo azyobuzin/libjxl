@@ -37,13 +37,15 @@ struct EncodedCombinedImage {
   size_t n_bytes() const noexcept { return data.size() + flif_data.size(); }
 };
 
+int FindBestWPMode(const jxl::Image &image);
+
 CombinedImage CombineImage(jxl::Image &&image);
 
 CombinedImage CombineImage(
     const std::vector<std::shared_ptr<const jxl::Image>> &images);
 
 jxl::Tree LearnTree(jxl::BitWriter &writer, const CombinedImage &image,
-                    const jxl::ModularOptions &options, size_t max_refs);
+                    jxl::ModularOptions &options, size_t max_refs);
 
 // 複数枚を JPEG XL で圧縮する。
 // max_refs で前何枚までの画像を参照するかを指定する。

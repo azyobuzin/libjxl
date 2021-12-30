@@ -1110,7 +1110,6 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
   return true;
 }
 
-namespace {
 float EstimateWPCost(const Image& img, size_t i) {
   size_t extra_bits = 0;
   float histo_cost = 0;
@@ -1197,8 +1196,6 @@ float EstimateCost(const Image& img) {
   }
   return histo_cost + extra_bits;
 }
-
-}  // namespace
 
 Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 const CompressParams& cparams,

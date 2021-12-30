@@ -1,6 +1,7 @@
 // ヘッダーなしのJPEG XLに変換する ベースライン検証用
 
 #include <fmt/core.h>
+#include <fmt/ostream.h>
 #include <tbb/parallel_for.h>
 
 #include <boost/program_options.hpp>
@@ -10,6 +11,7 @@
 #include "common_cluster.h"
 #include "enc_cluster.h"
 #include "images_provider.h"
+#include "jxl_parallel.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/transform.h"
@@ -20,7 +22,17 @@ namespace po = boost::program_options;
 
 using namespace research;
 
-int main(int argc, char *argv[]) {
+namespace jxl {
+
+bool do_transform(Image& image, const Transform& tr,
+                  const weighted::Header& wp_header,
+                  jxl::ThreadPool* pool = nullptr);
+
+float EstimateCost(const Image& img);
+
+}  // namespace jxl
+
+int main(int argc, char* argv[]) {
   po::options_description pos_ops;
   pos_ops.add_options()(
       "image-file",
@@ -36,6 +48,7 @@ int main(int argc, char *argv[]) {
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("palette", po::bool_switch(), "パレット変換を有効化する")
+    ("rct", po::bool_switch(), "色変換をすべて試す")
     ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先");
   // clang-format on
 
@@ -51,7 +64,7 @@ int main(int argc, char *argv[]) {
                   .run(),
               vm);
     po::notify(vm);
-  } catch (const po::error &e) {
+  } catch (const po::error& e) {
     std::cerr << e.what() << std::endl
               << std::endl
               << "Usage: enc_brute_force [OPTIONS] IMAGE_FILE..." << std::endl
@@ -59,11 +72,12 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const std::vector<std::string> &paths =
+  const std::vector<std::string>& paths =
       vm["image-file"].as<std::vector<std::string>>();
+  const bool try_all_rct = vm["rct"].as<bool>();
   FileImagesProvider images(paths);
-  images.ycocg = true;
   images.only_first_channel = vm["y-only"].as<bool>();
+  images.ycocg = images.only_first_channel || !try_all_rct;
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -74,7 +88,7 @@ int main(int argc, char *argv[]) {
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
 
-  const auto &out_dir = vm["out-dir"].as<fs::path>();
+  const auto& out_dir = vm["out-dir"].as<fs::path>();
   fs::create_directories(out_dir);
 
   const bool use_palette = vm["palette"].as<bool>();
@@ -86,6 +100,7 @@ int main(int argc, char *argv[]) {
     // エンコード
     CombinedImage image = CombineImage(images.get(i));
     jxl::BitWriter writer;
+    jxl::ThreadPool pool(TbbParallelRunner, nullptr);
 
     if (use_palette) {
       jxl::CompressParams cparams;
@@ -101,8 +116,7 @@ int main(int argc, char *argv[]) {
                    std::abs(cparams.palette_colors));
       global_palette.ordered_palette = cparams.palette_colors >= 0;
       global_palette.lossy_palette = false;
-      if (jxl::TransformForward(global_palette, image.image,
-                                jxl::weighted::Header(), nullptr)) {
+      if (jxl::TransformForward(global_palette, image.image, {}, &pool)) {
         image.image.transform.push_back(std::move(global_palette));
         std::cerr << images.get_label(i) << " use global palette" << std::endl;
       }
@@ -111,6 +125,7 @@ int main(int argc, char *argv[]) {
       JXL_ASSERT(cparams.channel_colors_percent > 0);
       for (size_t i = image.image.nb_meta_channels;
            i < image.image.channel.size(); i++) {
+        size_t real_chan = i - image.image.nb_meta_channels;
         int min, max;
         jxl::compute_minmax(image.image.channel[i], &min, &max);
         int colors = max - min + 1;
@@ -120,23 +135,60 @@ int main(int argc, char *argv[]) {
         local_palette.nb_colors =
             std::min((int)(image.image.w * image.image.h * 0.8),
                      (int)(cparams.channel_colors_percent / 100. * colors));
-        if (jxl::TransformForward(local_palette, image.image,
-                                  jxl::weighted::Header(), nullptr)) {
+        if (jxl::do_transform(image.image, local_palette, {}, &pool)) {
           image.image.transform.push_back(std::move(local_palette));
           std::cerr << images.get_label(i) << " use local palette (channel "
-                    << (i - image.image.nb_meta_channels) << ")" << std::endl;
+                    << real_chan << ")" << std::endl;
         }
       }
     }
 
-    jxl::Tree tree = LearnTree(writer, image, options, 0);
-    EncodeImages(writer, image, options, 0, tree);
+    if (!images.ycocg) {
+      // すべてのRCTを試す
+      // https://github.com/libjxl/libjxl/blob/3d077b281fa65eab595447ae38ba9efc385ba03e/lib/jxl/enc_modular.cc#L1303-L1361
+      jxl::Transform sg(jxl::TransformId::kRCT);
+      sg.begin_c = image.image.nb_meta_channels;
+      float best_cost = std::numeric_limits<float>::max();
+      size_t best_rct = 0;
+      for (int i : {0 * 7 + 0, 0 * 7 + 6, 0 * 7 + 5, 1 * 7 + 3, 3 * 7 + 5,
+                    5 * 7 + 5, 1 * 7 + 5, 2 * 7 + 5, 1 * 7 + 1, 0 * 7 + 4,
+                    1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
+                    4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
+        sg.rct_type = i;
+        if (jxl::do_transform(image.image, sg, {}, &pool)) {
+          float cost = jxl::EstimateCost(image.image);
+          if (cost < best_cost) {
+            best_rct = i;
+            best_cost = cost;
+          }
+          jxl::Transform t = image.image.transform.back();
+          JXL_CHECK(t.Inverse(image.image, {}, &pool));
+          image.image.transform.pop_back();
+        }
+      }
+
+      sg.rct_type = best_rct;
+      if (jxl::do_transform(image.image, sg, {}, &pool)) {
+        if (best_rct == 6) {
+          std::cerr << images.get_label(i) << " use YCoCg" << std::endl;
+        } else {
+          fmt::print(std::cerr, "{} use RCT {}, {}, {}\n", images.get_label(i),
+                     best_rct / 7, (best_rct % 7) >> 1, (best_rct % 7) & 1);
+        }
+      }
+    }
+
+    jxl::ModularOptions local_options = options;
+    local_options.wp_mode = FindBestWPMode(image.image);
+
+    jxl::Tree tree = LearnTree(writer, image, local_options, 0);
+    EncodeImages(writer, image, local_options, 0, tree);
     writer.ZeroPadToByte();
 
     // ファイルに出力
     auto span = writer.GetSpan();
     fs::path p = out_dir / fmt::format("{}.bin", i);
-    FILE *fp = fopen(p.c_str(), "wb");
+    FILE* fp = fopen(p.c_str(), "wb");
     if (fp) {
       if (fwrite(span.data(), 1, span.size(), fp) != span.size()) {
         std::cerr << "Failed to write " << p.string() << std::endl;
