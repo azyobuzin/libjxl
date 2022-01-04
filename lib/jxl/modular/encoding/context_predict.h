@@ -392,9 +392,9 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     }
   };
 
-  // channnel_per_image == 0 なら multi
-  // 機能を一切使わないということで、従来実装へ
-  if (multi_options.channel_per_image > 0 && i >= image.nb_meta_channels) {
+  // channnel_per_image == 0 なら multi 機能を一切使わないということで、従来実装へ
+  if (multi_options.max_refs > 0 && multi_options.channel_per_image > 0 &&
+      i >= image.nb_meta_channels) {
     size_t img_chan_idx =
         (i - image.nb_meta_channels) % multi_options.channel_per_image;
     size_t n_actual_refchan = std::min(img_chan_idx, n_refchan);

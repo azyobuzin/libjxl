@@ -20,7 +20,9 @@ namespace {
 // splitting_heuristics_properties に max_properties と max_refs を反映する
 void ApplyPropertiesOption(ModularOptions &options,
                            const MultiOptions &multi_options) {
-  if (multi_options.channel_per_image > 0) {
+  // channel_per_image == 0 → JPEG XL のデフォルト通りにやる
+  // max_refs == 0 → 明示的に画像を参照しないので、 max_properties に制限を設けない
+  if (multi_options.max_refs > 0 && multi_options.channel_per_image > 0) {
     options.max_properties =
         std::min(options.max_properties,
                  static_cast<int>(multi_options.channel_per_image) - 1);

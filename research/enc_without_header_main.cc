@@ -67,7 +67,8 @@ int main(int argc, char* argv[]) {
   } catch (const po::error& e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: enc_brute_force [OPTIONS] IMAGE_FILE..." << std::endl
+              << "Usage: enc_without_header [OPTIONS] IMAGE_FILE..."
+              << std::endl
               << ops_desc << std::endl;
     return 1;
   }
@@ -169,8 +170,9 @@ int main(int argc, char* argv[]) {
 
       sg.rct_type = best_rct;
       if (jxl::do_transform(image.image, sg, {}, &pool)) {
-        if (best_rct == 6) {
-          std::cerr << images.get_label(i) << " use YCoCg" << std::endl;
+        if (best_rct % 7 == 6) {
+          fmt::print(std::cerr, "{} use YCoCg, permutation {}\n",
+                     images.get_label(i), best_rct / 7);
         } else {
           fmt::print(std::cerr, "{} use RCT {}, {}, {}\n", images.get_label(i),
                      best_rct / 7, (best_rct % 7) >> 1, (best_rct % 7) & 1);

@@ -2,3 +2,4 @@ BasedOnStyle: Google
 IncludeCategories:
   - Regex:           '^<hwy/'
     Priority:        2
+ReflowComments: false
