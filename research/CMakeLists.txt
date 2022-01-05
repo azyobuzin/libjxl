@@ -44,6 +44,9 @@ target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
 add_executable(enc_all enc_all_main.cc)
 target_link_libraries(enc_all research ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES})
 
+add_executable(enc_avg enc_avg_main.cc)
+target_link_libraries(enc_avg research ${Boost_LIBRARIES})
+
 add_executable(enc_brute_force enc_brute_force_main.cc)
 target_link_libraries(enc_brute_force research ${Boost_LIBRARIES})
 
@@ -56,4 +59,12 @@ target_link_libraries(prop_clustering research ${Boost_LIBRARIES} ${MLPACK_LINK_
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})
 
-add_custom_target(research_exe ALL DEPENDS cost_graph_enc enc_all enc_brute_force enc_without_header prop_clustering prop_extract)
+add_custom_target(research_exe ALL DEPENDS
+  cost_graph_enc
+  enc_all
+  enc_avg
+  enc_brute_force
+  enc_without_header
+  prop_clustering
+  prop_extract
+)

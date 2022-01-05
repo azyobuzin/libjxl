@@ -193,12 +193,12 @@ int main(int argc, char* argv[]) {
     FILE* fp = fopen(p.c_str(), "wb");
     if (fp) {
       if (fwrite(span.data(), 1, span.size(), fp) != span.size()) {
-        std::cerr << "Failed to write " << p.string() << std::endl;
+        std::cerr << "Failed to write " << p.c_str() << std::endl;
         failed = true;
       }
       fclose(fp);
     } else {
-      std::cerr << "Failed to open " << p.string() << std::endl;
+      std::cerr << "Failed to open " << p.c_str() << std::endl;
       failed = true;
     }
 
