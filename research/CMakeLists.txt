@@ -1,5 +1,5 @@
 # 依存ライブラリ
-find_package(Boost REQUIRED COMPONENTS program_options serialization unit_test_framework)
+find_package(Boost REQUIRED COMPONENTS iostreams program_options serialization unit_test_framework)
 find_package(fmt REQUIRED)
 find_package(OpenCV REQUIRED core imgcodecs imgproc)
 find_package(TBB REQUIRED)
@@ -39,6 +39,9 @@ target_link_libraries(research jxl-static fmt::fmt glpk ${MLPACK_LINK_LIBRARIES}
 target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmonds-alg/src)
 
 # Executables
+add_executable(benchmark_random_decode benchmark_random_decode_main.cc)
+target_link_libraries(benchmark_random_decode research ${Boost_LIBRARIES})
+
 add_executable(cost_graph_enc cost_graph_enc_main.cc)
 target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
 
@@ -61,6 +64,7 @@ add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})
 
 add_custom_target(research_exe ALL DEPENDS
+  benchmark_random_decode
   cost_graph_enc
   enc_all
   enc_avg
