@@ -38,11 +38,8 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
 
   // 決定木
   Tree tree;
-  size_t tree_size_limit =
-      std::min(static_cast<size_t>(1 << 22),
-               1024 + static_cast<size_t>(decoding_options.width) *
-                          decoding_options.height *
-                          multi_options.channel_per_image / 16);
+  // 巨大決定木が生まれるので、制限を緩くしておく
+  size_t tree_size_limit = std::numeric_limits<int32_t>().max();
   Status status =
       JXL_STATUS(DecodeTree(&reader, &tree, tree_size_limit), "DecodeTree");
   if (!status) {
