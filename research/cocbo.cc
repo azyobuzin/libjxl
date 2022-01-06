@@ -17,6 +17,9 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
   JXL_CHECK(lower_bound <= k);
   JXL_CHECK(upper_bound >= k + 1);
 
+  // この条件を満たさないと、どのクラスタにも属さない個体が出てしまう
+  JXL_CHECK(data.n_cols <= (k + 1) * (data.n_cols / k));
+
   size_t n_cluster = std::max<size_t>(data.n_cols / k, 1);
   JXL_CHECK(n_cluster <= data.n_cols);
 
