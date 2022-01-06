@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iostream>
 
+#include "enc_all.h"
 #include "enc_cluster.h"
 #include "images_provider.h"
 #include "jxl_parallel.h"
@@ -155,6 +156,10 @@ int main(int argc, char* argv[]) {
   po::options_description ops_desc;
   // clang-format off
   ops_desc.add_options()
+    ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか")
+    ("clustering", po::value<std::string>()->default_value("cocbo"), "kmeans or cocbo")
+    ("k", po::value<uint16_t>()->default_value(2), "kmeansの場合はクラスタ数。cocboの場合はクラスタあたりの画像数")
+    ("margin", po::value<uint16_t>()->default_value(2), "(cocbo) kのマージン")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先ディレクトリ");
@@ -180,78 +185,108 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  const size_t split = vm["split"].as<uint16_t>();
+  const float fraction = vm["fraction"].as<float>();
+  const std::string& method = vm["clustering"].as<std::string>();
+  const size_t k = vm["k"].as<uint16_t>();
+  const int margin = vm["margin"].as<uint16_t>();
+  const fs::path& out_dir = vm["out-dir"].as<fs::path>();
+
   const std::vector<std::string>& paths =
       vm["image-file"].as<std::vector<std::string>>();
   FileImagesProvider images(paths);
   images.ycocg = true;
 
+  // クラスタリング
+  std::cerr << "Clustering" << std::endl;
+  arma::Row<size_t> assignments =
+      ClusterImages(split, fraction, method, k, margin, images);
+  size_t n_clusters =
+      *std::max_element(assignments.cbegin(), assignments.cend()) + 1;
+
   // Tortoise相当
   jxl::ModularOptions options{
-      .nb_repeats = vm["fraction"].as<float>(),
+      .nb_repeats = fraction,
       .max_properties = vm["refchan"].as<uint16_t>(),
       .splitting_heuristics_properties = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3,
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
 
-  const size_t n_images = images.size();
-  const size_t n_jobs = n_images + 1;
+  const size_t n_jobs = n_clusters + images.size();
   ConsoleProgressReporter progress("Encoding");
-
-  // すべての画像を使用するので、すべてロードする
-  std::vector<jxl::Image> images_vec(n_images);
-  tbb::parallel_for(size_t(0), n_images,
-                    [&](size_t i) { images_vec[i] = images.get(i); });
-
-  const fs::path& out_dir = vm["out-dir"].as<fs::path>();
-  fs::create_directories(out_dir);
-
-  // 平均画像を求める
-  jxl::Image avg_img;
-  {
-    SumImageBody body(images_vec);
-    tbb::parallel_reduce(tbb::blocked_range<size_t>(0, n_images, 2), body);
-    avg_img = std::move(body.sum_img);
-
-    for (jxl::Channel& chan : avg_img.channel) {
-      for (size_t y = 0; y < chan.h; y++) {
-        jxl::pixel_type* row = chan.Row(y);
-        for (size_t x = 0; x < chan.w; x++) row[x] /= n_images;
-      }
-    }
-  }
-
-  EncodeAndWrite(avg_img.clone(), options, out_dir / "avg.bin");
-  progress.report(1, n_jobs);
-
-  std::atomic_size_t n_completed = 1;
+  std::atomic_size_t n_completed = 0;
   std::atomic_bool failed = false;
 
-  // 差分画像を求める
-  tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
-    jxl::Image& img = images_vec.at(i);
+  // クラスタごとに圧縮
+  tbb::parallel_for(size_t(0), n_clusters, [&](size_t cluster_idx) {
+    std::vector<jxl::Image> cluster_inputs;
+    for (size_t i = 0; i < assignments.size(); i++) {
+      if (assignments[i] == cluster_idx)
+        cluster_inputs.push_back(images.get(i));
+    }
 
-    for (size_t c = 0; c < img.channel.size(); c++) {
-      const jxl::Channel& avg_chan = avg_img.channel[c];
-      jxl::Channel& img_chan = img.channel[c];
-      JXL_ASSERT(avg_chan.w == img_chan.w && avg_chan.h == img_chan.h);
+    const size_t n_cluster_images = cluster_inputs.size();
+    if (n_cluster_images == 0) return;
 
-      for (size_t y = 0; y < img_chan.h; y++) {
-        const jxl::pixel_type* avg_row = avg_chan.Row(y);
-        jxl::pixel_type* img_row = img_chan.Row(y);
-        for (size_t x = 0; x < img_chan.w; x++) {
-          img_row[x] -= avg_row[x];
+    fs::path cluster_dir = out_dir / fmt::format("cluster{}", cluster_idx);
+    fs::create_directories(cluster_dir);
+
+    // 平均画像を求める
+    jxl::Image avg_img;
+    {
+      SumImageBody body(cluster_inputs);
+      tbb::parallel_reduce(tbb::blocked_range<size_t>(0, n_cluster_images, 2),
+                           body);
+      avg_img = std::move(body.sum_img);
+
+      for (jxl::Channel& chan : avg_img.channel) {
+        for (size_t y = 0; y < chan.h; y++) {
+          jxl::pixel_type* row = chan.Row(y);
+          for (size_t x = 0; x < chan.w; x++) row[x] /= n_cluster_images;
         }
       }
     }
 
-    if (!EncodeAndWrite(std::move(img), options,
-                        out_dir / fmt::format("diff{}.bin", i))) {
+    if (!EncodeAndWrite(avg_img.clone(), options, cluster_dir / "avg.bin")) {
       failed = true;
     }
 
     progress.report(++n_completed, n_jobs);
+
+    // 差分画像を求める
+    tbb::parallel_for(size_t(0), n_cluster_images, [&](size_t i) {
+      jxl::Image& img = cluster_inputs.at(i);
+
+      for (size_t c = 0; c < img.channel.size(); c++) {
+        const jxl::Channel& avg_chan = avg_img.channel[c];
+        jxl::Channel& img_chan = img.channel[c];
+        JXL_ASSERT(avg_chan.w == img_chan.w && avg_chan.h == img_chan.h);
+
+        for (size_t y = 0; y < img_chan.h; y++) {
+          const jxl::pixel_type* avg_row = avg_chan.Row(y);
+          jxl::pixel_type* img_row = img_chan.Row(y);
+          for (size_t x = 0; x < img_chan.w; x++) {
+            img_row[x] -= avg_row[x];
+          }
+        }
+      }
+
+      if (!EncodeAndWrite(std::move(img), options,
+                          cluster_dir / fmt::format("diff{}.bin", i))) {
+        failed = true;
+      }
+
+      progress.report(++n_completed, n_jobs);
+    });
   });
 
-  return failed ? 1 : 0;
+  if (failed) return 1;
+
+  auto first_image = images.get(0);
+  WriteIndexFile(first_image.w, first_image.h,
+                 first_image.channel.size() - first_image.nb_meta_channels,
+                 n_clusters, assignments, out_dir);
+
+  return 0;
 }

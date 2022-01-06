@@ -17,6 +17,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   common_cluster.cc
   dec_cluster.cc
   dec_flif.cc
+  enc_all.cc
   enc_brute_force.cc
   enc_cluster.cc
   enc_flif.cc
@@ -34,7 +35,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   flif/transform/factory.cpp
 )
 target_compile_options(research PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(research jxl-static fmt::fmt glpk ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})
+target_link_libraries(research jxl-static fmt::fmt glpk ${MLPACK_LINK_LIBRARIES} ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})
 target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmonds-alg/src)
 
 # Executables
@@ -42,7 +43,7 @@ add_executable(cost_graph_enc cost_graph_enc_main.cc)
 target_link_libraries(cost_graph_enc research ${Boost_LIBRARIES})
 
 add_executable(enc_all enc_all_main.cc)
-target_link_libraries(enc_all research ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES})
+target_link_libraries(enc_all research ${Boost_LIBRARIES})
 
 add_executable(enc_avg enc_avg_main.cc)
 target_link_libraries(enc_avg research ${Boost_LIBRARIES})
@@ -54,7 +55,7 @@ add_executable(enc_without_header enc_without_header_main.cc)
 target_link_libraries(enc_without_header research ${Boost_LIBRARIES})
 
 add_executable(prop_clustering prop_clustering_main.cc)
-target_link_libraries(prop_clustering research ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES})
+target_link_libraries(prop_clustering research ${Boost_LIBRARIES})
 
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research ${Boost_LIBRARIES})
