@@ -4,19 +4,21 @@
 #include <tbb/parallel_for.h>
 
 #include <boost/program_options.hpp>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <mlpack/core.hpp>
 #include <set>
 
 #include "common_cluster.h"
+#include "enc_all.h"
 #include "enc_brute_force.h"
 #include "prop_extract.h"
-#include "enc_all.h"
 
 namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
+using namespace std::chrono;
 using namespace research;
 
 int main(int argc, char* argv[]) {
@@ -43,7 +45,8 @@ int main(int argc, char* argv[]) {
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
-    ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先ディレクトリ");
+    ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先ディレクトリ")
+    ("time", po::bool_switch(), "時間計測する");
   // clang-format on
 
   po::options_description all_desc;
@@ -72,6 +75,7 @@ int main(int argc, char* argv[]) {
   const size_t k = vm["k"].as<uint16_t>();
   const int margin = vm["margin"].as<uint16_t>();
   const bool flif_enabled = vm["flif"].as<bool>();
+  const bool measure_time = vm["time"].as<bool>();
 
   const std::vector<std::string>& paths =
       vm["image-file"].as<std::vector<std::string>>();
@@ -81,10 +85,18 @@ int main(int argc, char* argv[]) {
 
   // クラスタリング
   std::cerr << "Clustering" << std::endl;
+  auto clustering_start = steady_clock::now();
   arma::Row<size_t> assignments =
       ClusterImages(split, fraction, method, k, margin, images);
   size_t n_clusters =
       *std::max_element(assignments.cbegin(), assignments.cend()) + 1;
+
+  if (measure_time) {
+    auto clustering_end = steady_clock::now();
+    std::cout << "Clustering Time: "
+              << duration<double>(clustering_end - clustering_start).count()
+              << " s" << std::endl;
+  }
 
   int refchan = vm["refchan"].as<uint16_t>();
   size_t max_refs = vm["max-refs"].as<size_t>();
@@ -92,6 +104,8 @@ int main(int argc, char* argv[]) {
   const fs::path& out_dir = vm["out-dir"].as<fs::path>();
 
   fs::create_directories(out_dir);
+
+  auto encoding_start = steady_clock::now();
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -142,6 +156,13 @@ int main(int argc, char* argv[]) {
   WriteIndexFile(first_image.w, first_image.h,
                  first_image.channel.size() - first_image.nb_meta_channels,
                  n_clusters, assignments, out_dir);
+
+  if (measure_time) {
+    auto encoding_end = steady_clock::now();
+    std::cout << "Encoding Time: "
+              << duration<double>(encoding_end - encoding_start).count() << " s"
+              << std::endl;
+  }
 
   return 0;
 }
