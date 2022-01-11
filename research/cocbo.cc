@@ -41,7 +41,7 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
     }
   }
 
-  glp_add_rows(lp, data.n_cols * n_cluster);
+  glp_add_rows(lp, data.n_cols + n_cluster);
 
   {
     std::vector<int> indices(data.n_cols + 1);
@@ -98,7 +98,7 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
         auto u = glp_get_col_prim(lp, k * n_cluster + i + 1);
         JXL_DASSERT(u == 0 || u == 1);
         if (u == 1) {
-          assignments[k] = i;
+          assignments(k) = i;
           break;
         }
         if (i >= n_cluster - 1) {
@@ -112,7 +112,7 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
     new_centroids.zeros();
     std::fill(assign_count.begin(), assign_count.end(), 0);
     for (size_t k = 0; k < data.n_cols; k++) {
-      size_t i = assignments[k];
+      size_t i = assignments(k);
       assign_count[i]++;
       new_centroids.col(i) += data.col(k);
     }
