@@ -10,13 +10,13 @@ using namespace research;
 
 namespace {
 
-BidirectionalCostGraph<size_t> CreateGraph(ImagesProvider &images,
+BidirectionalCostGraph<double> CreateGraph(ImagesProvider &images,
                                            const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
   return CreateGraphWithDifferentTree(images, options, &progress).graph;
 }
 
-std::shared_ptr<ImageTree<size_t>> CreateTree(
+std::shared_ptr<ImageTree<double>> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
   return CreateMstWithDifferentTree(images, options, &progress);
