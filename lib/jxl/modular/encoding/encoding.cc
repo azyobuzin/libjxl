@@ -157,7 +157,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const Tree &global_tree,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id, Image *image,
-                                 const DecodingRect *rect, size_t n_refchan,
+                                 const DecodingRect *rect,
                                  const jxl::MultiOptions &multi_options) {
   Channel &channel = image->channel[chan];
 
@@ -358,7 +358,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, *image, chan, n_refchan, multi_options,
+      PrecomputeReferences(channel, y, *image, chan, multi_options,
                            &references);
       InitPropsRow(&properties, static_props, y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -379,7 +379,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
-      PrecomputeReferences(channel, y, *image, chan, n_refchan, multi_options,
+      PrecomputeReferences(channel, y, *image, chan, multi_options,
                            &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
@@ -516,7 +516,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, i, group_id, &image,
-        rect, options->max_properties, multi_options));
+        rect, multi_options));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");

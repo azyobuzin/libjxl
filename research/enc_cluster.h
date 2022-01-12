@@ -12,7 +12,7 @@
 namespace research {
 
 struct EncodingOptions {
-  size_t max_refs;
+  jxl::ParentReferenceType parent_reference;
   bool flif_enabled;
   int flif_learn_repeats;
   int flif_additional_props;
@@ -21,8 +21,9 @@ struct EncodingOptions {
 // 複数の画像をまとめた画像
 struct CombinedImage {
   jxl::Image image;
-  size_t n_images;
-  CombinedImage(jxl::Image image, size_t n_images);
+  uint32_t n_images;
+  // 2番目以降の画像が何番目を参照するか
+  std::vector<uint32_t> references;
 };
 
 struct EncodedCombinedImage {
@@ -41,16 +42,17 @@ int FindBestWPMode(const jxl::Image &image);
 
 CombinedImage CombineImage(jxl::Image &&image);
 
-CombinedImage CombineImage(
+[[deprecated("親画像参照を考える必要がある")]] CombinedImage CombineImage(
     const std::vector<std::shared_ptr<const jxl::Image>> &images);
 
 jxl::Tree LearnTree(jxl::BitWriter &writer, const CombinedImage &image,
-                    jxl::ModularOptions &options, size_t max_refs);
+                    jxl::ModularOptions &options,
+                    jxl::ParentReferenceType parent_reference);
 
 // 複数枚を JPEG XL で圧縮する。
-// max_refs で前何枚までの画像を参照するかを指定する。
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &image,
-                  const jxl::ModularOptions &options, size_t max_refs,
+                  const jxl::ModularOptions &options,
+                  jxl::ParentReferenceType parent_reference,
                   const jxl::Tree &tree);
 
 void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,

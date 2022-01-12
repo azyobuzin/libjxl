@@ -31,7 +31,9 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
                            Span<const uint8_t> flif_data,
                            std::vector<Image> &out_images) {
   // FLIF がある場合は、Yチャネルのみ JPEG XL になっている
-  MultiOptions multi_options = decoding_options.multi_options;
+  // TODO(research): resolve references
+  MultiOptions multi_options = {decoding_options.n_channel,
+                                decoding_options.reference_type};
   if (decoding_options.flif_enabled) multi_options.channel_per_image = 1;
 
   BitReader reader(jxl_data);
@@ -62,7 +64,6 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
   Image ci(decoding_options.width, decoding_options.height, kBitdepth,
            multi_options.channel_per_image * out_images.size());
   ModularOptions options;
-  options.max_properties = decoding_options.refchan;
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
   status = JXL_STATUS(ModularDecodeMulti(&reader, ci, 0, &options, &tree, &code,
                                          &context_map, &dr, multi_options),
@@ -105,8 +106,8 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
 ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
                                      Span<const uint8_t> data)
     : options_(options),
-      header_(options.width, options.height,
-              options.multi_options.channel_per_image, options.flif_enabled) {
+      header_(options.width, options.height, options.n_channel,
+              options.flif_enabled) {
   BitReader reader(data);
   JXL_CHECK(Bundle::Read(&reader, &header_));
   JXL_CHECK(reader.JumpToByteBoundary());

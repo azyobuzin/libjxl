@@ -183,8 +183,9 @@ int main(int argc, char* argv[]) {
     jxl::ModularOptions local_options = options;
     local_options.wp_mode = FindBestWPMode(image.image);
 
-    jxl::Tree tree = LearnTree(writer, image, local_options, 0);
-    EncodeImages(writer, image, local_options, 0, tree);
+    jxl::Tree tree =
+        LearnTree(writer, image, local_options, jxl::kParentReferenceNone);
+    EncodeImages(writer, image, local_options, jxl::kParentReferenceNone, tree);
     writer.ZeroPadToByte();
 
     // ファイルに出力

@@ -78,11 +78,9 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
       {chan, (int)group_id}};
-  Properties properties(
-      kNumNonrefProperties +
-      kExtraPropsPerChannel *
-          (options.max_properties +
-           multi_options.channel_per_image * multi_options.max_refs));
+  Properties properties(kNumNonrefProperties +
+                        kExtraPropsPerChannel * (options.max_properties +
+                                                 multi_options.n_parent_ref()));
   double pixel_fraction = std::min(1.0f, options.nb_repeats);
   // a fraction of 0 is used to disable learning entirely.
   if (pixel_fraction > 0) {
@@ -110,8 +108,7 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
   for (size_t y = 0; y < channel.h; y++) {
     const pixel_type *JXL_RESTRICT p = channel.Row(y);
-    PrecomputeReferences(channel, y, image, chan, options.max_properties,
-                         multi_options, &references);
+    PrecomputeReferences(channel, y, image, chan, multi_options, &references);
     InitPropsRow(&properties, static_props, y);
     // TODO(veluca): avoid computing WP if we don't use its property or
     // predictions.
@@ -166,7 +163,6 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
 }
 
 Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
-                                 size_t n_refchan,
                                  const MultiOptions &multi_options,
                                  const weighted::Header &wp_header,
                                  const Tree &global_tree,
@@ -321,8 +317,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, chan, n_refchan, multi_options,
-                           &references);
+      PrecomputeReferences(channel, y, image, chan, multi_options, &references);
       float *pred_img_row[3];
       if (kWantDebug) {
         for (size_t c = 0; c < 3; c++) {
@@ -351,8 +346,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, chan, n_refchan, multi_options,
-                           &references);
+      PrecomputeReferences(channel, y, image, chan, multi_options, &references);
       float *pred_img_row[3];
       if (kWantDebug) {
         for (size_t c = 0; c < 3; c++) {
@@ -505,7 +499,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      {0, 0});
     } else {
       JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
-          image, i, options.max_properties, multi_options, header->wp_header,
+          image, i, multi_options, header->wp_header,
           *tree, tokens, aux_out, group_id, options.skip_encoder_fast_path));
     }
   }

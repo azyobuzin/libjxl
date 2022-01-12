@@ -9,8 +9,8 @@ namespace research {
 struct DecodingOptions {
   uint32_t width;
   uint32_t height;
-  jxl::MultiOptions multi_options;
-  int refchan;
+  uint32_t n_channel;
+  jxl::ParentReferenceType reference_type;
   bool flif_enabled;
   int flif_additional_props;
 };

@@ -41,8 +41,8 @@ EncodedCombinedImage ComputeEncodedBits(
   CombinedImage ci = CombineImage(jxl_images);
   BitWriter writer;
   ModularOptions options = options_in;
-  Tree tree = LearnTree(writer, ci, options, encoding_options.max_refs);
-  EncodeImages(writer, ci, options, encoding_options.max_refs, tree);
+  Tree tree = LearnTree(writer, ci, options, encoding_options.parent_reference);
+  EncodeImages(writer, ci, options, encoding_options.parent_reference, tree);
   size_t n_bits = writer.BitsWritten();
   writer.ZeroPadToByte();
 
@@ -136,9 +136,6 @@ struct Traverse {
         [this](std::shared_ptr<EncodingTree> &child) { (*this)(child); });
 
     for (auto &child : node->children) {
-      // 探索後の子は捨てられているはず
-      JXL_ASSERT(child->children.empty());
-
       // node に child を結合した場合に、圧縮率が改善するか試す
       // TODO(research): 最後は並列化が効かなくなって、すごく遅い
       auto images = node->images.included_images;
@@ -162,8 +159,6 @@ struct Traverse {
         if (progress) progress->report(n_completed + n_images, n_images * 2);
       }
     }
-
-    node->children.clear();
 
     // 根ならばこれ以上戻れないので出力
     if (!node->parent) {

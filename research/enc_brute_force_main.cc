@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
+    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数") // TODO(research)
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")

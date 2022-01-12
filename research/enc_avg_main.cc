@@ -121,8 +121,8 @@ bool EncodeAndWrite(jxl::Image image, const jxl::ModularOptions& options,
   jxl::ModularOptions local_options = options;
   local_options.wp_mode = FindBestWPMode(ci.image);
 
-  jxl::Tree tree = LearnTree(writer, ci, local_options, 0);
-  EncodeImages(writer, ci, local_options, 0, tree);
+  jxl::Tree tree = LearnTree(writer, ci, local_options, jxl::kParentReferenceNone);
+  EncodeImages(writer, ci, local_options, jxl::kParentReferenceNone, tree);
   writer.ZeroPadToByte();
   jxl::Span<const uint8_t> span = writer.GetSpan();
 

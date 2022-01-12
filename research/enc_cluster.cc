@@ -20,17 +20,13 @@ namespace {
 // splitting_heuristics_properties に max_properties と max_refs を反映する
 void ApplyPropertiesOption(ModularOptions &options,
                            const MultiOptions &multi_options) {
-  // channel_per_image == 0 → JPEG XL のデフォルト通りにやる
-  // max_refs == 0 → 明示的に画像を参照しないので、 max_properties に制限を設けない
-  if (multi_options.max_refs > 0 && multi_options.channel_per_image > 0) {
-    options.max_properties =
-        std::min(options.max_properties,
-                 static_cast<int>(multi_options.channel_per_image) - 1);
+  if (multi_options.reference_type != kParentReferenceNone) {
+    JXL_CHECK(multi_options.references != nullptr);
   }
 
   uint32_t n_ref_channels =
-      options.max_properties +
-      multi_options.max_refs * multi_options.channel_per_image;
+      options.max_properties + multi_options.n_parent_ref();
+
   for (uint32_t i = 0; i < n_ref_channels * 4; i++) {
     uint32_t prop = kNumNonrefProperties + i;
     if (std::find(options.splitting_heuristics_properties.begin(),
@@ -54,12 +50,6 @@ int FindBestWPMode(const Image &image) {
     }
   }
   return wp_mode;
-}
-
-CombinedImage::CombinedImage(Image image, size_t n_images)
-    : n_images(n_images) {
-  JXL_CHECK((image.channel.size() - image.nb_meta_channels) % n_images == 0);
-  this->image = std::move(image);
 }
 
 CombinedImage CombineImage(Image &&image) {
@@ -106,10 +96,10 @@ Status ModularEncodeMulti(
     std::vector<Token> *tokens = nullptr, size_t *width = nullptr);
 
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
-               ModularOptions &options, size_t max_refs) {
+               ModularOptions &options, ParentReferenceType parent_reference) {
   MultiOptions multi_options{
       (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-      std::min(max_refs, ci.n_images - 1)};
+      parent_reference, &ci.references};
   ApplyPropertiesOption(options, multi_options);
   options.wp_mode = FindBestWPMode(ci.image);
 
@@ -160,11 +150,11 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
 }
 
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
-                  const jxl::ModularOptions &options_in, size_t max_refs,
-                  const jxl::Tree &tree) {
+                  const jxl::ModularOptions &options_in,
+                  ParentReferenceType parent_reference, const jxl::Tree &tree) {
   MultiOptions multi_options{
       (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-      std::min(max_refs, ci.n_images - 1)};
+      parent_reference, &ci.references};
   ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
 

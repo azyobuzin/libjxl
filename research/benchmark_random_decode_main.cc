@@ -24,8 +24,9 @@ using namespace research;
 namespace {
 
 template <class RandomEngine>
-jxl::Image DecodeOneImage(const fs::path& input_dir, int refchan,
-                          size_t max_refs, RandomEngine& engine) {
+jxl::Image DecodeOneImage(const fs::path& input_dir,
+                          jxl::ParentReferenceType parent_reference,
+                          RandomEngine& engine) {
   IndexFields index;
   {
     boost::iostreams::mapped_file_source index_file(input_dir / "index.bin");
@@ -46,9 +47,8 @@ jxl::Image DecodeOneImage(const fs::path& input_dir, int refchan,
     if (index.assignments[i] == cluster_idx) idx_in_cluster++;
   }
 
-  DecodingOptions options{
-      index.width, index.height, {index.n_channel, max_refs},
-      refchan,     false,        0};
+  DecodingOptions options{index.width,      index.height, index.n_channel,
+                          parent_reference, false,        0};
 
   boost::iostreams::mapped_file_source cluster_file(
       input_dir / fmt::format("cluster{}.bin", cluster_idx));
@@ -71,8 +71,7 @@ int main(int argc, char* argv[]) {
   po::options_description ops_desc;
   // clang-format off
   ops_desc.add_options()
-    ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
+    ("parentref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("iter", po::value<uint32_t>()->default_value(1000), "デコードする画像数");
   // clang-format on
@@ -99,8 +98,8 @@ int main(int argc, char* argv[]) {
   }
 
   const fs::path& input_dir = vm["input-dir"].as<fs::path>();
-  const int refchan = vm["refchan"].as<uint16_t>();
-  const size_t max_refs = vm["max-refs"].as<size_t>();
+  const jxl::ParentReferenceType parent_reference =
+      static_cast<jxl::ParentReferenceType>(vm["parentref"].as<uint8_t>());
   const bool flif_enabled = vm["flif"].as<bool>();
   if (flif_enabled) JXL_ABORT("not implemented");
   // TODO(research): FLIF対応
@@ -113,7 +112,7 @@ int main(int argc, char* argv[]) {
 
   for (uint32_t i = 0; i < iter; i++) {
     auto start = steady_clock::now();
-    DecodeOneImage(input_dir, refchan, max_refs, rng);
+    DecodeOneImage(input_dir, parent_reference, rng);
     auto end = steady_clock::now();
     durations[i] = duration<double, std::milli>(end - start).count();
   }
