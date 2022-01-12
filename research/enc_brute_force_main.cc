@@ -18,7 +18,7 @@ using namespace research;
 
 namespace {
 
-std::shared_ptr<ImageTree<size_t>> CreateTree(
+std::shared_ptr<ImageTree<double>> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Computing MST");
   return CreateMstWithDifferentTree(images, options, &progress);

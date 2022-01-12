@@ -33,12 +33,12 @@ struct ImageTree {
 };
 
 // ある画像から学習した決定木を使って別の画像を圧縮したときのサイズを利用して、コストグラフを作成する。
-BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
+BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress);
 
 // 1枚だけで圧縮したときのコストがもっとも小さい画像を根としてMSTを求める。
-std::shared_ptr<ImageTree<size_t>> CreateMstWithDifferentTree(
+std::shared_ptr<ImageTree<double>> CreateMstWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress);
 

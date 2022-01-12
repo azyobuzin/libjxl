@@ -12,7 +12,7 @@ namespace research {
 
 namespace {
 
-typedef BidirectionalCostGraph<size_t> G;
+typedef BidirectionalCostGraph<double> G;
 
 struct LearnedTree {
   Tree tree;
@@ -20,7 +20,7 @@ struct LearnedTree {
   size_t n_bits;
 };
 
-LearnedTree LearnTree(Image image, const ModularOptions &options_in) {
+LearnedTree LearnTree(Image &&image, const ModularOptions &options_in) {
   BitWriter writer;
   ModularOptions options = options_in;
   Tree tree = LearnTree(writer, CombineImage(std::move(image)), options,
@@ -28,7 +28,7 @@ LearnedTree LearnTree(Image image, const ModularOptions &options_in) {
   return {tree, options.wp_mode, writer.BitsWritten()};
 }
 
-size_t ComputeEncodedBits(Image image, const ModularOptions &options,
+size_t ComputeEncodedBits(Image &&image, const ModularOptions &options,
                           const Tree &tree) {
   BitWriter writer;
   EncodeImages(writer, CombineImage(std::move(image)), options,
@@ -38,7 +38,7 @@ size_t ComputeEncodedBits(Image image, const ModularOptions &options,
 
 }  // namespace
 
-BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
+BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
     ImagesProvider &ip, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
   const size_t n_images = ip.size();
@@ -59,29 +59,33 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
   });
 
   // グラフを作成する
-  std::vector<size_t> self_costs(n_images);
+  std::vector<double> self_costs(n_images);
   std::vector<std::pair<G::vertex_descriptor, G::vertex_descriptor>> edges(
       n_edges);
-  std::vector<size_t> costs(n_edges);
+  std::vector<double> costs(n_edges);
 
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
     size_t dst_idx = (n_images - 1) * i;
-    const auto &tree_lhs = learned_trees[i];
+    const auto &tree_self = learned_trees[i];
     ModularOptions local_options = options;
-    local_options.wp_mode = tree_lhs.wp_mode;
+    local_options.wp_mode = tree_self.wp_mode;
 
     // 自分自身の決定木で圧縮した場合
     self_costs[i] =
-        tree_lhs.n_bits +
-        ComputeEncodedBits(images[i].clone(), local_options, tree_lhs.tree);
+        tree_self.n_bits +
+        ComputeEncodedBits(images[i].clone(), local_options, tree_self.tree);
 
-    // この決定木で他の画像を圧縮した場合
+    // この画像を他の決定木で圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
       if (i == j) continue;
 
-      edges[dst_idx] = {i, j};
-      costs[dst_idx] =
-          ComputeEncodedBits(images[j].clone(), local_options, tree_lhs.tree);
+      const auto &tree_other = learned_trees[j];
+      local_options.wp_mode = tree_other.wp_mode;
+      int64_t cost_bits =
+          tree_other.n_bits +
+          ComputeEncodedBits(images[i].clone(), local_options, tree_other.tree);
+      edges[dst_idx] = {j, i};
+      costs[dst_idx] = (cost_bits - self_costs[i]) / self_costs[i];
       dst_idx++;
 
       completed_jobs++;
@@ -97,7 +101,7 @@ BidirectionalCostGraphResult<size_t> CreateGraphWithDifferentTree(
           G(edges.begin(), edges.end(), costs.begin(), n_images)};
 }
 
-std::shared_ptr<ImageTree<size_t>> CreateMstWithDifferentTree(
+std::shared_ptr<ImageTree<double>> CreateMstWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
   const size_t n_images = images.size();
@@ -118,11 +122,11 @@ std::shared_ptr<ImageTree<size_t>> CreateMstWithDifferentTree(
       g, get(boost::vertex_index_t(), g), get(boost::edge_weight_t(), g),
       roots.begin(), roots.end(), std::back_inserter(edges));
 
-  std::vector<std::shared_ptr<ImageTree<size_t>>> tree_nodes;
+  std::vector<std::shared_ptr<ImageTree<double>>> tree_nodes;
   tree_nodes.reserve(n_images);
   for (size_t i = 0; i < n_images; i++)
     tree_nodes.emplace_back(
-        new ImageTree<size_t>{.image_idx = i, .self_cost = gr.self_costs[i]});
+        new ImageTree<double>{.image_idx = i, .self_cost = gr.self_costs[i]});
 
   for (auto &e : edges) {
     auto &src = tree_nodes.at(source(e, g));

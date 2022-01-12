@@ -57,8 +57,9 @@ EncodedCombinedImage ComputeEncodedBits(
 }
 
 // MSTをとりあえず1枚ずつ圧縮した形式にする
+template <typename Cost>
 std::vector<EncodingTreeNode> CreateEncodingTree(
-    std::shared_ptr<const ImageTree<size_t>> root, ImagesProvider &images,
+    std::shared_ptr<const ImageTree<Cost>> root, ImagesProvider &images,
     const ModularOptions &options, const EncodingOptions &encoding_options,
     ProgressReporter *progress) {
   std::atomic_size_t n_completed = 0;
@@ -82,8 +83,7 @@ std::vector<EncodingTreeNode> CreateEncodingTree(
   result_tree.emplace_back(
       EncodingTreeNode{std::move(encoded_data.at(root->image_idx)), -1});
 
-  std::stack<std::pair<std::shared_ptr<const ImageTree<size_t>>, uint32_t>>
-      stack;
+  std::stack<std::pair<std::shared_ptr<const ImageTree<Cost>>, uint32_t>> stack;
   stack.emplace(root, 0);
 
   while (!stack.empty()) {
@@ -97,7 +97,7 @@ std::vector<EncodingTreeNode> CreateEncodingTree(
     dst_node.children.reserve(src_node->children.size());
 
     // コストの小さい順を得る
-    std::vector<std::pair<size_t, size_t>> costs;
+    std::vector<std::pair<Cost, size_t>> costs;
     costs.reserve(src_node->costs.size());
     for (size_t i = 0; i < src_node->costs.size(); i++)
       costs.emplace_back(src_node->costs[i], i);
@@ -198,7 +198,7 @@ struct Traverse {
 }  // namespace
 
 std::vector<EncodedCombinedImage> EncodeWithBruteForce(
-    ImagesProvider &images, std::shared_ptr<const ImageTree<size_t>> root,
+    ImagesProvider &images, std::shared_ptr<const ImageTree<double>> root,
     const ModularOptions &options, const EncodingOptions &encoding_options,
     ProgressReporter *progress) {
   auto tree =
