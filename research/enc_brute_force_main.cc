@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数") // TODO(research)
+    ("parent-ref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
@@ -80,10 +80,11 @@ int main(int argc, char *argv[]) {
   FileImagesProvider images(paths);
   images.ycocg = true;
 
-  int refchan = vm["refchan"].as<uint16_t>();
-  size_t max_refs = vm["max-refs"].as<size_t>();
-  bool flif_enabled = vm["flif"].as<bool>();
-  int flif_learn_repeats = vm["flif-learn"].as<int>();
+  const int refchan = vm["refchan"].as<uint16_t>();
+  const jxl::ParentReferenceType parent_ref =
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<uint8_t>());
+  const bool flif_enabled = vm["flif"].as<bool>();
+  const int flif_learn_repeats = vm["flif-learn"].as<int>();
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -96,7 +97,8 @@ int main(int argc, char *argv[]) {
 
   auto tree = CreateTree(images, options);
 
-  EncodingOptions encoding_options{max_refs, flif_enabled, flif_learn_repeats};
+  EncodingOptions encoding_options{parent_ref, flif_enabled,
+                                   flif_learn_repeats};
 
   std::vector<EncodedCombinedImage> results;
   {
@@ -158,9 +160,9 @@ int main(int argc, char *argv[]) {
       // ClusterFile形式から読み出す
       std::string buf = oss.str();
       jxl::Span<const uint8_t> span(buf);
-      DecodingOptions options{
-          width,   height,       {n_channel, max_refs},
-          refchan, flif_enabled, /*flif_additional_props=*/0};
+      DecodingOptions options{width,        height,
+                              n_channel,    parent_ref,
+                              flif_enabled, /*flif_additional_props=*/0};
       ClusterFileReader reader(options, span);
       if (!reader.ReadAll(decoded_images)) {
         std::cerr << "Failed to decode images" << std::endl;

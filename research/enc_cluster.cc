@@ -52,13 +52,14 @@ int FindBestWPMode(const Image &image) {
   return wp_mode;
 }
 
-CombinedImage CombineImage(Image &&image) {
-  return {std::forward<Image>(image), 1};
-}
+CombinedImage CombineImage(Image &&image) { return {std::move(image), 1}; }
 
 CombinedImage CombineImage(
-    const std::vector<std::shared_ptr<const Image>> &images) {
+    const std::vector<std::shared_ptr<const Image>> &images,
+    std::vector<uint32_t> references) {
   JXL_CHECK(images.size() > 0);
+  JXL_CHECK(references.size() == images.size() - 1);
+
   const Image &first_image = *images[0];
 
   // すべての画像が同じ条件であることを確認
@@ -75,6 +76,9 @@ CombinedImage CombineImage(
               first_image.channel.size() * images.size());
 
   for (size_t i = 0; i < images.size(); i++) {
+    // 以前の画像しか参照してはいけない
+    if (i > 0) JXL_CHECK(references[i - 1] < i);
+
     for (size_t j = 0; j < first_image.channel.size(); j++) {
       const Channel &src = images[i]->channel.at(j);
       Channel &dst = image.channel.at(i * first_image.channel.size() + j);
@@ -82,7 +86,8 @@ CombinedImage CombineImage(
     }
   }
 
-  return {std::move(image), images.size()};
+  return {std::move(image), static_cast<uint32_t>(images.size()),
+          std::move(references)};
 }
 
 // modular/encoding/enc_encoding.cc で定義。
@@ -98,8 +103,11 @@ Status ModularEncodeMulti(
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
                ModularOptions &options, ParentReferenceType parent_reference) {
   MultiOptions multi_options{
-      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-      parent_reference, &ci.references};
+      .channel_per_image = static_cast<uint32_t>(ci.image.channel.size() -
+                                                 ci.image.nb_meta_channels) /
+                           ci.n_images,
+      .reference_type = parent_reference,
+      .references = &ci.references};
   ApplyPropertiesOption(options, multi_options);
   options.wp_mode = FindBestWPMode(ci.image);
 
@@ -153,8 +161,11 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
                   const jxl::ModularOptions &options_in,
                   ParentReferenceType parent_reference, const jxl::Tree &tree) {
   MultiOptions multi_options{
-      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
-      parent_reference, &ci.references};
+      .channel_per_image = static_cast<uint32_t>(ci.image.channel.size() -
+                                                 ci.image.nb_meta_channels) /
+                           ci.n_images,
+      .reference_type = parent_reference,
+      .references = &ci.references};
   ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
 

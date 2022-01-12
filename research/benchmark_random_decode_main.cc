@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
   po::options_description ops_desc;
   // clang-format off
   ops_desc.add_options()
-    ("parentref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
+    ("parent-ref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("iter", po::value<uint32_t>()->default_value(1000), "デコードする画像数");
   // clang-format on
@@ -98,8 +98,8 @@ int main(int argc, char* argv[]) {
   }
 
   const fs::path& input_dir = vm["input-dir"].as<fs::path>();
-  const jxl::ParentReferenceType parent_reference =
-      static_cast<jxl::ParentReferenceType>(vm["parentref"].as<uint8_t>());
+  const jxl::ParentReferenceType parent_ref =
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<uint8_t>());
   const bool flif_enabled = vm["flif"].as<bool>();
   if (flif_enabled) JXL_ABORT("not implemented");
   // TODO(research): FLIF対応
@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
 
   for (uint32_t i = 0; i < iter; i++) {
     auto start = steady_clock::now();
-    DecodeOneImage(input_dir, parent_reference, rng);
+    DecodeOneImage(input_dir, parent_ref, rng);
     auto end = steady_clock::now();
     durations[i] = duration<double, std::milli>(end - start).count();
   }

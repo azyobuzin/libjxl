@@ -30,9 +30,8 @@ struct EncodedCombinedImage {
   // data に含まれる画像のインデックス
   std::vector<uint32_t> image_indices;
   std::vector<std::shared_ptr<const jxl::Image>> included_images;
+  std::vector<uint32_t> references;
   jxl::PaddedBytes data;
-  // 書き込まれたビット数
-  size_t n_bits;
   jxl::PaddedBytes flif_data;
 
   size_t n_bytes() const noexcept { return data.size() + flif_data.size(); }
@@ -42,8 +41,9 @@ int FindBestWPMode(const jxl::Image &image);
 
 CombinedImage CombineImage(jxl::Image &&image);
 
-[[deprecated("親画像参照を考える必要がある")]] CombinedImage CombineImage(
-    const std::vector<std::shared_ptr<const jxl::Image>> &images);
+CombinedImage CombineImage(
+    const std::vector<std::shared_ptr<const jxl::Image>> &images,
+    std::vector<uint32_t> references);
 
 jxl::Tree LearnTree(jxl::BitWriter &writer, const CombinedImage &image,
                     jxl::ModularOptions &options,

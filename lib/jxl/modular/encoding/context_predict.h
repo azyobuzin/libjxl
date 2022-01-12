@@ -336,7 +336,7 @@ struct MultiOptions {
   const std::vector<uint32_t> *references;
 
   // reference_type によって参照されるチャネル数
-  uint32_t n_parent_ref() const {
+  uint32_t n_parent_ref() const noexcept {
     switch (reference_type) {
       case kParentReferenceSameChannel:
         return 1;
@@ -410,38 +410,46 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     }
   };
 
-  uint32_t img_idx =
-      (i - image.nb_meta_channels) / multi_options.channel_per_image;
-  uint32_t img_chan_idx =
-      (i - image.nb_meta_channels) % multi_options.channel_per_image;
+  if (multi_options.reference_type != kParentReferenceNone) {
+    JXL_ASSERT(multi_options.references != nullptr);
+  }
 
-  switch (multi_options.reference_type) {
-    case kParentReferenceSameChannel:
-      if (img_idx > 0) {
-        compute(image.nb_meta_channels +
-                multi_options.references->at(img_idx - 1) *
-                    multi_options.channel_per_image +
-                img_chan_idx);
-      }
-      offset += kExtraPropsPerChannel;
-      break;
-    case kParentReferenceAllChannel:
-      if (img_idx > 0) {
-        size_t refchan_base =
-            image.nb_meta_channels + multi_options.references->at(img_idx - 1) *
-                                         multi_options.channel_per_image;
-        for (uint32_t c = 0;
-             c < multi_options.channel_per_image && offset < num_extra_props;
-             c++) {
-          compute(refchan_base + c);
-          offset += kExtraPropsPerChannel;
+  if (multi_options.references && multi_options.references->size() > 0) {
+    uint32_t img_idx =
+        (i - image.nb_meta_channels) / multi_options.channel_per_image;
+    uint32_t img_chan_idx =
+        (i - image.nb_meta_channels) % multi_options.channel_per_image;
+
+    switch (multi_options.reference_type) {
+      case kParentReferenceSameChannel:
+        if (img_idx > 0) {
+          compute(image.nb_meta_channels +
+                  multi_options.references->at(img_idx - 1) *
+                      multi_options.channel_per_image +
+                  img_chan_idx);
         }
-      } else {
-        offset += kExtraPropsPerChannel * multi_options.channel_per_image;
-      }
-      break;
-    case kParentReferenceNone:
-      break;
+        offset += kExtraPropsPerChannel;
+        break;
+      case kParentReferenceAllChannel:
+        if (img_idx > 0) {
+          size_t refchan_base = image.nb_meta_channels +
+                                multi_options.references->at(img_idx - 1) *
+                                    multi_options.channel_per_image;
+          for (uint32_t c = 0;
+               c < multi_options.channel_per_image && offset < num_extra_props;
+               c++) {
+            compute(refchan_base + c);
+            offset += kExtraPropsPerChannel;
+          }
+        } else {
+          offset += kExtraPropsPerChannel * multi_options.channel_per_image;
+        }
+        break;
+      case kParentReferenceNone:
+        break;
+    }
+  } else {
+    // reference_type が何であれ、1枚だけの符号化時は offset を進めない
   }
 
   // 以下 従来実装
