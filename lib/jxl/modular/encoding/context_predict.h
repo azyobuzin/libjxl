@@ -336,7 +336,7 @@ struct MultiOptions {
   const std::vector<uint32_t> *references;
 
   // reference_type によって参照されるチャネル数
-  uint32_t n_parent_ref() const noexcept {
+  uint32_t n_parent_ref() const {
     switch (reference_type) {
       case kParentReferenceNone:
         return 0;

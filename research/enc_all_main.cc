@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     // エンコード
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("parent-ref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
+    ("parent-ref", po::value<int>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先ディレクトリ")
@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) {
 
   const int refchan = vm["refchan"].as<uint16_t>();
   const jxl::ParentReferenceType parent_ref =
-      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<uint8_t>());
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<int>());
   const int flif_learn_repeats = vm["flif-learn"].as<int>();
   const fs::path& out_dir = vm["out-dir"].as<fs::path>();
 
