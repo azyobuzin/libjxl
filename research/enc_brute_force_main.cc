@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("parent-ref", po::value<uint8_t>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
+    ("parent-ref", po::value<int>()->default_value(2), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
 
   const int refchan = vm["refchan"].as<uint16_t>();
   const jxl::ParentReferenceType parent_ref =
-      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<uint8_t>());
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<int>());
   const bool flif_enabled = vm["flif"].as<bool>();
   const int flif_learn_repeats = vm["flif-learn"].as<int>();
 
@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    PackToClusterFile(results, dst);
+    PackToClusterFile(results, parent_ref, dst);
     dst.flush();
 
     if (!dst) {
@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
 
       // ClusterFile形式に変換
       std::ostringstream oss(std::ios_base::out | std::ios_base::binary);
-      PackToClusterFile(results, oss);
+      PackToClusterFile(results, parent_ref, oss);
 
       if (!oss) {
         std::cerr << "Failed to write to buffer" << std::endl;

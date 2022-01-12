@@ -22,17 +22,27 @@ class ClusterFileReader {
 
   const ClusterHeader& header() const noexcept { return header_; }
 
-  size_t n_images() const noexcept { return header_.pointers.size(); }
+  uint32_t n_images() const noexcept {
+    return static_cast<uint32_t>(pointers_.size());
+  }
 
   jxl::Status ReadAll(std::vector<jxl::Image>& out_images);
 
-  jxl::Status Read(size_t idx, jxl::Image& out_image);
+  jxl::Status Read(uint32_t idx, jxl::Image& out_image);
 
  private:
   const DecodingOptions& options_;
   // ヘッダーを含まないバイト列
   jxl::Span<const uint8_t> data_;
   ClusterHeader header_;
+  std::vector<uint32_t> pointers_;
+  std::vector<std::vector<uint32_t>> references_;
 };
+
+void DecodeClusterPointers(jxl::BitReader& reader,
+                           std::vector<uint32_t>& pointers);
+
+void DecodeReferences(jxl::BitReader& reader,
+                      std::vector<uint32_t>& references);
 
 }  // namespace research

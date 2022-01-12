@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
     fs::path out_path = out_dir / fmt::format("cluster{}.bin", cluster_idx);
     std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
     if (dst) {
-      PackToClusterFile(results, dst);
+      PackToClusterFile(results, parent_ref, dst);
       dst.flush();
     }
 

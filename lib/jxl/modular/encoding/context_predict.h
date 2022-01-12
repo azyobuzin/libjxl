@@ -338,12 +338,14 @@ struct MultiOptions {
   // reference_type によって参照されるチャネル数
   uint32_t n_parent_ref() const noexcept {
     switch (reference_type) {
+      case kParentReferenceNone:
+        return 0;
       case kParentReferenceSameChannel:
         return 1;
       case kParentReferenceAllChannel:
         return channel_per_image;
       default:
-        return 0;
+        JXL_ABORT("Invalid reference_type");
     }
   }
 };
@@ -414,7 +416,8 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
     JXL_ASSERT(multi_options.references != nullptr);
   }
 
-  if (multi_options.references && multi_options.references->size() > 0) {
+  if (offset < num_extra_props && multi_options.references &&
+      multi_options.references->size() > 0) {
     uint32_t img_idx =
         (i - image.nb_meta_channels) / multi_options.channel_per_image;
     uint32_t img_chan_idx =
@@ -447,6 +450,8 @@ inline void PrecomputeReferences(const Channel &ch, size_t y,
         break;
       case kParentReferenceNone:
         break;
+      default:
+        JXL_ABORT("Invalid reference_type");
     }
   } else {
     // reference_type が何であれ、1枚だけの符号化時は offset を進めない

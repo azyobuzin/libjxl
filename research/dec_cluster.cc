@@ -1,6 +1,7 @@
 #include "dec_cluster.h"
 
 #include <fmt/core.h>
+#include <gmpxx.h>
 #include <tbb/parallel_for.h>
 
 #include "dec_flif.h"
@@ -27,13 +28,13 @@ namespace {
 constexpr int kBitdepth = 8;
 
 Status DecodeCombinedImage(const DecodingOptions &decoding_options,
+                           const std::vector<uint32_t> *references,
                            Span<const uint8_t> jxl_data,
                            Span<const uint8_t> flif_data,
                            std::vector<Image> &out_images) {
   // FLIF がある場合は、Yチャネルのみ JPEG XL になっている
-  // TODO(research): resolve references
   MultiOptions multi_options = {decoding_options.n_channel,
-                                decoding_options.reference_type};
+                                decoding_options.reference_type, references};
   if (decoding_options.flif_enabled) multi_options.channel_per_image = 1;
 
   BitReader reader(jxl_data);
@@ -101,6 +102,23 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
   return true;
 }
 
+mpz_class ReadMpz(jxl::BitReader &reader, const mpz_class &max_state) {
+  mpz_class state = 0;
+  size_t n_bits = mpz_sizeinbase(max_state.get_mpz_t(), 2);
+  mp_bitcnt_t shift = 0;
+  while (shift <= n_bits) {
+    mp_bitcnt_t bits_left = n_bits - shift;
+    if (bits_left >= 32) {
+      state |= mpz_class(reader.ReadFixedBits<32>()) << shift;
+      shift += 32;
+    } else {
+      state |= mpz_class(reader.ReadBits(bits_left)) << shift;
+      break;
+    }
+  }
+  return state;
+}
+
 }  // namespace
 
 ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
@@ -110,6 +128,21 @@ ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
               options.flif_enabled) {
   BitReader reader(data);
   JXL_CHECK(Bundle::Read(&reader, &header_));
+
+  uint32_t n_images = 0;
+  for (const auto &x : header_.combined_images) n_images += x.n_images;
+
+  pointers_.resize(n_images);
+  DecodeClusterPointers(reader, pointers_);
+
+  if (options.reference_type != kParentReferenceNone) {
+    references_.resize(header_.combined_images.size());
+    for (size_t i = 0; i < header_.combined_images.size(); i++) {
+      references_[i].resize(header_.combined_images[i].n_images - 1);
+      DecodeReferences(reader, references_[i]);
+    }
+  }
+
   JXL_CHECK(reader.JumpToByteBoundary());
   JXL_CHECK(reader.Close());
   data_ = reader.GetSpan();
@@ -118,8 +151,7 @@ ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
 Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   // 画像列のインデックスから、本来のインデックスを求められるようにする
   std::vector<size_t> reverse_pointer(n_images());
-  for (size_t i = 0; i < n_images(); i++)
-    reverse_pointer.at(header_.pointers[i]) = i;
+  for (size_t i = 0; i < n_images(); i++) reverse_pointer.at(pointers_[i]) = i;
 
   // CombinedImageのオフセットを求める
   std::vector<std::pair<size_t, size_t>> accum_idx_bytes;
@@ -141,14 +173,17 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
     const auto &ci_info = header_.combined_images[i];
     auto [idx_offset, bytes_offset] = accum_idx_bytes[i];
 
+    const std::vector<uint32_t> *references =
+        options_.reference_type == kParentReferenceNone ? nullptr
+                                                        : &references_.at(i);
     Span<const uint8_t> jxl_span(data_.data() + bytes_offset, ci_info.n_bytes);
     Span<const uint8_t> flif_span(data_.data() + bytes_offset + ci_info.n_bytes,
                                   ci_info.n_flif_bytes);
 
     std::vector<Image> images(ci_info.n_images);
-    Status decode_status =
-        JXL_STATUS(DecodeCombinedImage(options_, jxl_span, flif_span, images),
-                   "failed to decode %" PRIuS, i);
+    Status decode_status = JXL_STATUS(
+        DecodeCombinedImage(options_, references, jxl_span, flif_span, images),
+        "failed to decode %" PRIuS, i);
 
     if (decode_status) {
       for (size_t j = 0; j < ci_info.n_images; j++) {
@@ -169,12 +204,14 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   return status;
 }
 
-Status ClusterFileReader::Read(size_t idx, Image &out_image) {
-  idx = header_.pointers.at(idx);
+Status ClusterFileReader::Read(uint32_t idx, Image &out_image) {
+  idx = pointers_.at(idx);
 
-  size_t accum_idx = 0, accum_bytes = 0;
+  uint32_t accum_idx = 0, accum_bytes = 0;
 
-  for (const auto &ci_info : header_.combined_images) {
+  for (size_t i = 0; i < header_.combined_images.size(); i++) {
+    const auto &ci_info = header_.combined_images[i];
+
     if (idx >= accum_idx + ci_info.n_images) {
       accum_idx += ci_info.n_images;
       accum_bytes += ci_info.n_bytes;
@@ -183,11 +220,15 @@ Status ClusterFileReader::Read(size_t idx, Image &out_image) {
     }
 
     // Found
+    const std::vector<uint32_t> *references =
+        options_.reference_type == kParentReferenceNone ? nullptr
+                                                        : &references_.at(i);
     Span<const uint8_t> jxl_span(data_.data() + accum_bytes, ci_info.n_bytes);
     Span<const uint8_t> flif_span(data_.data() + accum_bytes + ci_info.n_bytes,
                                   ci_info.n_flif_bytes);
     std::vector<Image> images(ci_info.n_images);
-    Status status = DecodeCombinedImage(options_, jxl_span, flif_span, images);
+    Status status =
+        DecodeCombinedImage(options_, references, jxl_span, flif_span, images);
     if (status) {
       out_image = std::move(images.at(idx - accum_idx));
     }
@@ -195,6 +236,63 @@ Status ClusterFileReader::Read(size_t idx, Image &out_image) {
   }
 
   throw std::out_of_range(fmt::format("idx {} >= n_images {}", idx, accum_idx));
+}
+
+void DecodeClusterPointers(BitReader &reader, std::vector<uint32_t> &pointers) {
+  const uint32_t n_images = static_cast<uint32_t>(pointers.size());
+  if (n_images == 0) return;
+
+  pointers[n_images - 1] = 0;
+
+  if (n_images == 1) return;
+
+  // 理論上の最大値
+  mpz_class max_state = 0;
+  for (uint32_t i = 0; i < n_images - 1; i++) {
+    max_state *= n_images - i;
+    max_state += n_images - i - 1;
+  }
+
+  mpz_class state = ReadMpz(reader, max_state);
+
+  for (uint32_t i = 2; i <= n_images; i++) {
+    // 商が次の状態、余りが値
+    pointers[n_images - i] =
+        mpz_tdiv_q_ui(state.get_mpz_t(), state.get_mpz_t(), i);
+  }
+
+  std::vector<uint32_t> index_map(n_images);
+  for (uint32_t i = 0; i < n_images; i++) index_map[i] = i;
+
+  // pointers を実際の値にマップする
+  for (uint32_t &p : pointers) {
+    JXL_ASSERT(p < index_map.size());
+    auto it = index_map.begin() + p;
+    p = *it;
+    index_map.erase(it);
+  }
+}
+
+void DecodeReferences(BitReader &reader, std::vector<uint32_t> &references) {
+  const uint32_t n_refs = references.size();
+  if (n_refs == 0) return;
+
+  references[0] = 0;
+
+  if (n_refs == 1) return;
+
+  mpz_class max_state = 0;
+  for (uint32_t i = 1; i < n_refs; i++) {
+    max_state *= i + 1;
+    max_state += i;
+  }
+
+  mpz_class state = ReadMpz(reader, max_state);
+
+  for (uint32_t i = n_refs - 1; i >= 1; i--) {
+    // 商が次の状態、余りが値
+    references[i] = mpz_tdiv_q_ui(state.get_mpz_t(), state.get_mpz_t(), i + 1);
+  }
 }
 
 }  // namespace research

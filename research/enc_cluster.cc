@@ -1,5 +1,7 @@
 #include "enc_cluster.h"
 
+#include <gmpxx.h>
+
 #include "common_cluster.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -34,6 +36,20 @@ void ApplyPropertiesOption(ModularOptions &options,
                   prop) == options.splitting_heuristics_properties.end())
       options.splitting_heuristics_properties.push_back(prop);
   }
+}
+
+void WriteMpz(BitWriter &writer, mpz_class &state, const mpz_class &max_state) {
+  size_t bits_left = mpz_sizeinbase(max_state.get_mpz_t(), 2);
+  BitWriter::Allotment allotment(&writer, bits_left);
+
+  while (bits_left > 0) {
+    size_t bits_to_write = std::min<size_t>(bits_left, 32);
+    writer.Write(bits_to_write, state.get_ui());
+    state >>= bits_to_write;
+    bits_left -= bits_to_write;
+  }
+
+  ReclaimAndCharge(&writer, &allotment, 0, nullptr);
 }
 
 }  // namespace
@@ -190,7 +206,68 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
 }
 
+void EncodeClusterPointers(BitWriter &writer,
+                           const std::vector<uint32_t> pointers) {
+  const uint32_t n_images = pointers.size();
+  if (n_images == 0) return;
+  if (n_images == 1) {
+    JXL_CHECK(pointers[0] == 0);
+    return;
+  }
+
+  // 値域を小さくするため、未使用のインデックスのインデックスを書き込む
+  std::vector<uint32_t> index_map(n_images);
+  for (uint32_t i = 0; i < n_images; i++) index_map[i] = i;
+
+  // 符号化する値
+  mpz_class state = 0;
+  // 理論上の最大値
+  mpz_class max_state = 0;
+
+  for (uint32_t i = 0; i < n_images - 1; i++) {
+    auto mapped_idx_iter =
+        std::find(index_map.begin(), index_map.end(), pointers[i]);
+    JXL_CHECK(mapped_idx_iter != index_map.end());
+    uint32_t mapped_idx = mapped_idx_iter - index_map.begin();
+    state *= index_map.size();
+    state += mapped_idx;
+    max_state *= index_map.size();
+    max_state += index_map.size() - 1;
+    index_map.erase(mapped_idx_iter);
+  }
+
+  JXL_ASSERT(index_map.size() == 1);
+  JXL_CHECK(pointers[n_images - 1] == index_map[0]);
+
+  WriteMpz(writer, state, max_state);
+}
+
+void EncodeReferences(BitWriter &writer,
+                      const std::vector<uint32_t> references) {
+  const uint32_t n_refs = references.size();
+  if (n_refs == 0) return;
+  JXL_CHECK(references[0] == 0);
+  if (n_refs == 1) {
+    return;
+  }
+
+  // TODO(research): もっと偏りが出るはずなので、最適ではない
+
+  mpz_class state, max_state = 0;
+
+  for (uint32_t i = 1; i < n_refs; i++) {
+    JXL_CHECK(references[i] <= i);
+    state *= i + 1;
+    state += references[i];
+    max_state *= i + 1;
+    max_state += i;
+  }
+
+  WriteMpz(writer, state, max_state);
+}
+
 void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
+                       ParentReferenceType parent_reference,
                        std::ostream &dst) {
   JXL_CHECK(combined_images.size() > 0);
 
@@ -220,16 +297,25 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
     ci_info.n_flif_bytes = static_cast<uint32_t>(ci.flif_data.size());
   }
 
-  header.pointers.resize(n_images);
+  std::vector<uint32_t> pointers(n_images);
   size_t ptr_idx = 0;
   for (const auto &ci : combined_images) {
-    for (auto idx : ci.image_indices) header.pointers.at(idx) = ptr_idx++;
+    for (auto idx : ci.image_indices) pointers.at(idx) = ptr_idx++;
   }
 
   JXL_ASSERT(ptr_idx == n_images);
 
   BitWriter header_writer;
   JXL_CHECK(Bundle::Write(header, &header_writer, 0, nullptr));
+  EncodeClusterPointers(header_writer, pointers);
+
+  if (parent_reference != kParentReferenceNone) {
+    for (const auto &ci : combined_images) {
+      JXL_CHECK(ci.references.size() == ci.image_indices.size() - 1);
+      EncodeReferences(header_writer, ci.references);
+    }
+  }
+
   header_writer.ZeroPadToByte();
 
   Span<const uint8_t> header_span = header_writer.GetSpan();

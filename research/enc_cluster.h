@@ -55,7 +55,17 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &image,
                   jxl::ParentReferenceType parent_reference,
                   const jxl::Tree &tree);
 
+// 元のi番目の画像は、combined_imagesの何番目の画像かを表すpointersを符号化する
+void EncodeClusterPointers(jxl::BitWriter &writer,
+                           const std::vector<uint32_t> pointers);
+
+// i-1番目の画像は、何番目の画像を参照するのかを表すreferencesを符号化する
+void EncodeReferences(jxl::BitWriter &writer,
+                      jxl::ParentReferenceType parent_reference,
+                      const std::vector<uint32_t> references);
+
 void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
+                       jxl::ParentReferenceType parent_reference,
                        std::ostream &dst);
 
 }  // namespace research
