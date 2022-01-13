@@ -12,7 +12,7 @@ namespace research {
 
 namespace {
 
-typedef BidirectionalCostGraph<double> G;
+typedef BidirectionalCostGraph<int64_t> G;
 
 struct LearnedTree {
   Tree tree;
@@ -36,7 +36,7 @@ size_t ComputeEncodedBits(Image &&image, const ModularOptions &options,
 
 }  // namespace
 
-BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
+BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
     ImagesProvider &ip, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
   const size_t n_images = ip.size();
@@ -57,10 +57,10 @@ BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
   });
 
   // グラフを作成する
-  std::vector<double> self_costs(n_images);
+  std::vector<int64_t> self_costs(n_images);
   std::vector<std::pair<G::vertex_descriptor, G::vertex_descriptor>> edges(
       n_edges);
-  std::vector<double> costs(n_edges);
+  std::vector<int64_t> costs(n_edges);
 
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
     size_t dst_idx = (n_images - 1) * i;
@@ -83,7 +83,7 @@ BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
           tree_other.n_bits +
           ComputeEncodedBits(images[i].clone(), local_options, tree_other.tree);
       edges[dst_idx] = {j, i};
-      costs[dst_idx] = (cost_bits - self_costs[i]) / self_costs[i];
+      costs[dst_idx] = cost_bits - self_costs[i];
       dst_idx++;
 
       completed_jobs++;
@@ -99,7 +99,7 @@ BidirectionalCostGraphResult<double> CreateGraphWithDifferentTree(
           G(edges.begin(), edges.end(), costs.begin(), n_images)};
 }
 
-std::shared_ptr<ImageTree<double>> CreateMstWithDifferentTree(
+std::shared_ptr<ImageTree<int64_t>> CreateMstWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress) {
   const size_t n_images = images.size();
@@ -120,11 +120,11 @@ std::shared_ptr<ImageTree<double>> CreateMstWithDifferentTree(
       g, get(boost::vertex_index_t(), g), get(boost::edge_weight_t(), g),
       roots.begin(), roots.end(), std::back_inserter(edges));
 
-  std::vector<std::shared_ptr<ImageTree<double>>> tree_nodes;
+  std::vector<std::shared_ptr<ImageTree<int64_t>>> tree_nodes;
   tree_nodes.reserve(n_images);
   for (size_t i = 0; i < n_images; i++)
     tree_nodes.emplace_back(
-        new ImageTree<double>{.image_idx = i, .self_cost = gr.self_costs[i]});
+        new ImageTree<int64_t>{.image_idx = i, .self_cost = gr.self_costs[i]});
 
   for (auto &e : edges) {
     auto &src = tree_nodes.at(source(e, g));

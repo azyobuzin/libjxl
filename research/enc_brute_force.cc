@@ -178,7 +178,7 @@ struct Traverse {
 }  // namespace
 
 std::vector<EncodedCombinedImage> EncodeWithBruteForce(
-    ImagesProvider &images, std::shared_ptr<const ImageTree<double>> root,
+    ImagesProvider &images, std::shared_ptr<const ImageTree<int64_t>> root,
     const ModularOptions &options, const EncodingOptions &encoding_options,
     ProgressReporter *progress) {
   Traverse traverse(images.size(), options, encoding_options, progress);
