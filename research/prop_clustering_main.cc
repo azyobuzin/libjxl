@@ -38,6 +38,7 @@ int main(int argc, char *argv[]) {
     ("method", po::value<std::string>()->default_value("kmeans"), "kmeans or cocbo")
     ("k", po::value<uint16_t>()->default_value(2), "kmeansの場合はクラスタ数。cocboの場合はクラスタあたりの画像数")
     ("margin", po::value<uint16_t>()->default_value(2), "(cocbo) kのマージン")
+    ("random", po::bool_switch(), "乱数シードをランダムに設定する")
     ("copy-to", po::value<fs::path>(), "クラスタリングされた画像をディレクトリにコピーする");
   // clang-format on
 
@@ -59,6 +60,10 @@ int main(int argc, char *argv[]) {
               << "Usage: prop_clustering [OPTIONS] IMAGE_FILE..." << std::endl
               << ops_desc << std::endl;
     return 1;
+  }
+
+  if (vm["random"].as<bool>()) {
+    mlpack::math::RandomSeed(static_cast<size_t>(std::time(nullptr)));
   }
 
   const size_t split = vm["split"].as<uint16_t>();
