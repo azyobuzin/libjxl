@@ -10,6 +10,8 @@
 
 namespace research {
 
+static void CleanupGlpProb(glp_prob** p) { glp_delete_prob(*p); }
+
 void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
                       size_t upper_bound, arma::Row<size_t>& assignments,
                       size_t max_iterations) {
@@ -27,7 +29,7 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
   glp_init_smcp(&glp_param);
   glp_param.msg_lev = GLP_MSG_ERR;
 
-  glp_prob* lp = glp_create_prob();
+  glp_prob* __attribute__((cleanup(CleanupGlpProb))) lp = glp_create_prob();
   glp_set_prob_name(lp, "COCBO");
   glp_set_obj_dir(lp, GLP_MIN);  // 最小化問題
 
@@ -125,8 +127,6 @@ void ClusterWithCocbo(const arma::mat& data, size_t k, size_t lower_bound,
     }
     std::swap(centroids, new_centroids);
   }
-
-  glp_delete_prob(lp);
 }
 
 }  // namespace research

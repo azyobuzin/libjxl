@@ -20,6 +20,7 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
   flif_options options = FLIF_DEFAULT_OPTIONS;
   options.learn_repeats = learn_repeats;
   options.additional_props = additional_props;
+  options.skip_p0 = 1;
 
   // FLIF の Image にコピー
   Images flif_images;
@@ -107,7 +108,7 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
   // 決定木を出力
   flif_encode_tree<BlobIO, FLIFBitChanceTree, RacOut<BlobIO>>(
       io, rac, &ranges, forest, options.method.encoding, flif_images.size(),
-      options.additional_props, options.print_tree);
+      options.additional_props, options.skip_p0, options.print_tree);
 
   options.divisor = 0;
   options.min_size = 0;

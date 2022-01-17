@@ -50,7 +50,7 @@ template<typename RAC> void static write_name(RAC& rac, std::string desc) {
 // alphazero = false: image either has no alpha plane, or A=0 has no special meaning
 // FRA = true: image has FRA plane (animation with lookback)
 template<typename IO, typename Rac, typename Coder>
-void flif_encode_scanlines_inner(IO& io, FLIF_UNUSED(Rac& rac), std::vector<Coder> &coders, const Images &images, const ColorRanges *ranges, const int additional_props, Progress &progress) {
+void flif_encode_scanlines_inner(IO& io, FLIF_UNUSED(Rac& rac), std::vector<Coder> &coders, const Images &images, const ColorRanges *ranges, const int additional_props, const bool skip_p0, Progress &progress) {
     const std::vector<ColorVal> greys = computeGreys(ranges);
     ColorVal min,max;
     long fs = io.ftell();
@@ -63,7 +63,7 @@ void flif_encode_scanlines_inner(IO& io, FLIF_UNUSED(Rac& rac), std::vector<Code
     for (int k=0,i=0; k < 5; k++) {
         int p=PLANE_ORDERING[k];
         if (p>=nump) continue;
-        if (p==0) continue;
+        if (skip_p0 && p==0) continue;
         i++;
         if (ranges->min(p) >= ranges->max(p)) continue;
         const ColorVal minP = ranges->min(p);
@@ -112,7 +112,7 @@ void flif_encode_scanlines_pass(IO& io, Rac &rac, const Images &images, const Co
     }
 
     while(repeats-- > 0) {
-     flif_encode_scanlines_inner<IO,Rac,Coder>(io, rac, coders, images, ranges, options.additional_props, progress);
+     flif_encode_scanlines_inner<IO,Rac,Coder>(io, rac, coders, images, ranges, options.additional_props, options.skip_p0, progress);
     }
 
     for (int p = 0; p < ranges->numPlanes(); p++) {
@@ -205,13 +205,17 @@ void flif_encode_FLIF2_inner(IO& io, Rac& rac, std::vector<Coder> &coders, const
     long fs = io.ftell();
     UniformSymbolCoder<Rac> metaCoder(rac);
     const bool default_order = (options.chroma_subsampling==0);
-    JXL_CHECK(default_order); // 順番入れ替えには対応したくない
-    for (int p=1; p<nump; p++) metaCoder.write_int(-1, MAX_PREDICTOR, the_predictor[p]);
+    if (options.skip_p0) {
+      JXL_CHECK(default_order); // 順番入れ替えには対応したくない
+    } else {
+      metaCoder.write_int(0, 1, (default_order? 1 : 0)); // we're using the default zoomlevel/plane ordering
+    }
+    for (int p=options.skip_p0 ? 1 : 0; p<nump; p++) metaCoder.write_int(-1, MAX_PREDICTOR, the_predictor[p]);
     for (int i = 0; i < plane_zoomlevels(images[0], beginZL, endZL); i++) {
       std::pair<int, int> pzl = plane_zoomlevel(images[0], beginZL, endZL, i, ranges);
       int p = pzl.first;
       int z = pzl.second;
-      if (p == 0) continue;
+      if (options.skip_p0 && p == 0) continue;
       if (options.chroma_subsampling && p > 0 && p < 3 && z < 2) continue;
       if (!default_order) metaCoder.write_int(0, nump-1, p);
       if (ranges->min(p) >= ranges->max(p)) continue;
@@ -302,7 +306,7 @@ void flif_encode_FLIF2_pass(IO& io, Rac &rac, const Images &images, const ColorR
       // special case: very left top pixel must be written first to get it all started
 //      SimpleSymbolCoder<FLIFBitChanceMeta, Rac, 18> metaCoder(rac);
       UniformSymbolCoder<Rac> metaCoder(rac);
-      for (int p = 1; p < images[0].numPlanes(); p++) {
+      for (int p = options.skip_p0 ? 1 : 0; p < images[0].numPlanes(); p++) {
         if (ranges->min(p) < ranges->max(p)) {
             for (const Image& image : images) metaCoder.write_int(ranges->min(p), ranges->max(p), image(p,0,0,0));
             progress.pixels_done++;
@@ -668,9 +672,9 @@ void flif_make_lossy_interlaced(Images &images, const ColorRanges * ranges, int 
     }
 }
 
-template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, const std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props, const bool printTree)
+template<typename IO, typename BitChance, typename Rac> void flif_encode_tree(FLIF_UNUSED(IO& io), Rac &rac, const ColorRanges *ranges, const std::vector<Tree> &forest, const flifEncoding encoding, const int nb_frames, const int additional_props, const bool skip_p0, const bool printTree)
 {
-    for (int p = 1; p < ranges->numPlanes(); p++) {
+    for (int p = skip_p0 ? 1 : 0; p < ranges->numPlanes(); p++) {
         PropNamesAndRanges propRanges;
         if (encoding==flifEncoding::nonInterlaced) initPropRanges_scanlines(propRanges, *ranges, p, nb_frames, additional_props);
         else initPropRanges(propRanges, *ranges, p, nb_frames, additional_props);
@@ -731,7 +735,7 @@ void flif_encode_main(RacOut<IO>& rac, IO& io, Images &images, const ColorRanges
 
     //v_printf(2,"Encoding tree\n");
     fs = io.ftell();
-    flif_encode_tree<IO, FLIFBitChanceTree, RacOut<IO>>(io, rac, ranges, forest, encoding, images.size(), options.additional_props, options.print_tree);
+    flif_encode_tree<IO, FLIFBitChanceTree, RacOut<IO>>(io, rac, ranges, forest, encoding, images.size(), options.additional_props, options.skip_p0, options.print_tree);
     v_printf(3," MANIAC tree: %li bytes.\n", io.ftell()-fs);
     options.divisor=0;
     options.min_size=0;

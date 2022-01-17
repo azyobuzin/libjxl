@@ -18,6 +18,7 @@ jxl::Status DecodeColorSignalWithFlif(std::vector<jxl::Image>& images,
 
   flif_options options = FLIF_DEFAULT_OPTIONS;
   options.additional_props = additional_props;
+  options.skip_p0 = 1;
 
   bool interlaced = images[0].w * images[0].h * images.size() >= 10000;
   options.method.encoding =
@@ -68,7 +69,7 @@ jxl::Status DecodeColorSignalWithFlif(std::vector<jxl::Image>& images,
 
   if (!flif_decode_tree<BlobReader, FLIFBitChanceTree, RacIn<BlobReader>>(
           io, rac, &ranges, forest, options.method.encoding, images.size(),
-          options.additional_props, options.print_tree))
+          options.additional_props, options.skip_p0, options.print_tree))
     return JXL_STATUS(false, "flif_decode_tree");
 
   if (interlaced) {
