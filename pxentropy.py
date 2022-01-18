@@ -30,7 +30,7 @@ with TemporaryDirectory() as temp_dir:
             [DJXL_PATH, src_path, os.path.join(temp_dir, f"{i}.png")],
             stdout=subprocess.PIPE,
             text=True,
-            env=djxl_env
+            env=djxl_env,
         )
 
         if djxl_result.returncode != 0:
@@ -74,6 +74,8 @@ with TemporaryDirectory() as temp_dir:
                     print(
                         f"duplicate p={key[0]} fr={key[1]} r={r} c={c}", file=sys.stderr
                     )
+
+            np.savetxt(f"{stem} p={key[0]} fr={key[1]}.txt", result)
 
             RANGE_MAX = 30  # 30 bit を一番濃い色とする
             print(

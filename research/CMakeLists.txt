@@ -64,6 +64,8 @@ add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research)
 
 add_custom_target(research_exe ALL DEPENDS
+  cjxl
+  djxl
   benchmark_random_decode
   cost_graph_enc
   enc_all
