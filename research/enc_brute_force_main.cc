@@ -100,8 +100,8 @@ int main(int argc, char *argv[]) {
   std::vector<EncodedCombinedImage> results;
   {
     ConsoleProgressReporter progress("Encoding");
-    results = EncodeWithBruteForce(images, tree, options, encoding_options,
-                                   &progress);
+    results = EncodeWithBruteForce<int64_t>(images, tree, options,
+                                            encoding_options, &progress);
   }
 
   for (const auto &x : results) {

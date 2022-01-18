@@ -46,6 +46,7 @@ int main(int argc, char* argv[]) {
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
+    ("enc-method", po::value<std::string>()->default_value("brute-force"), "brute-force or combine-all")
     ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先ディレクトリ")
     ("time", po::bool_switch(), "時間計測する");
   // clang-format on
@@ -76,11 +77,19 @@ int main(int argc, char* argv[]) {
 
   const size_t split = vm["split"].as<uint16_t>();
   const float fraction = vm["fraction"].as<float>();
-  const std::string& method = vm["clustering"].as<std::string>();
+  const std::string& cluster_method = vm["clustering"].as<std::string>();
   const size_t k = vm["k"].as<uint16_t>();
   const int margin = vm["margin"].as<uint16_t>();
   const bool flif_enabled = vm["flif"].as<bool>();
+  const std::string& enc_method = vm["enc-method"].as<std::string>();
   const bool measure_time = vm["time"].as<bool>();
+
+  bool use_brute_force = false;
+  if (enc_method == "brute-force") {
+    use_brute_force = true;
+  } else if (enc_method != "combine-all") {
+    JXL_ABORT("enc-method is invalid");
+  }
 
   const std::vector<std::string>& paths =
       vm["image-file"].as<std::vector<std::string>>();
@@ -92,7 +101,7 @@ int main(int argc, char* argv[]) {
   std::cerr << "Clustering" << std::endl;
   auto clustering_start = steady_clock::now();
   arma::Row<size_t> assignments =
-      ClusterImages(split, fraction, method, k, margin, images);
+      ClusterImages(split, fraction, cluster_method, k, margin, images);
   size_t n_clusters =
       *std::max_element(assignments.cbegin(), assignments.cend()) + 1;
 
@@ -137,8 +146,15 @@ int main(int argc, char* argv[]) {
     cluster_images.ycocg = true;
 
     auto tree = CreateMstWithDifferentTree(cluster_images, options, nullptr);
-    auto results = EncodeWithBruteForce(cluster_images, tree, options,
-                                        encoding_options, nullptr);
+
+    std::vector<EncodedCombinedImage> results;
+    if (use_brute_force) {
+      results = EncodeWithBruteForce<int64_t>(cluster_images, tree, options,
+                                              encoding_options, nullptr);
+    } else {
+      results = EncodeWithCombineAll<int64_t>(cluster_images, tree, options,
+                                              encoding_options, nullptr);
+    }
 
     fs::path out_path = out_dir / fmt::format("cluster{}.bin", cluster_idx);
     std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
