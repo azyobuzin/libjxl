@@ -1,3 +1,4 @@
+#include <fmt/core.h>
 #include <tbb/parallel_for.h>
 
 #include <mlpack/core.hpp>
@@ -30,6 +31,11 @@ void ImageToMat(const Image &image, arma::Mat<T> &mat) {
   }
 }
 
+inline size_t DestinationIndexDiv2(size_t i, size_t n_images) {
+  // 0 + n-1 + n-2 + ... + n-i = i*n - (0 + 1 + 2 + ... + i)
+  return i * n_images - i * (i + 1) / 2;
+}
+
 G CreateGraphWithYRmse(const std::vector<arma::mat> &images,
                        ProgressReporter *progress,
                        std::atomic_size_t &completed_jobs) {
@@ -39,7 +45,7 @@ G CreateGraphWithYRmse(const std::vector<arma::mat> &images,
   std::vector<double> costs(n_edges(n_images));
 
   tbb::parallel_for(size_t(0), n_images - 1, [&](size_t i) {
-    size_t dst_idx = i * n_images - i * (i + 1);
+    size_t dst_idx = DestinationIndexDiv2(i, n_images);
 
     if (i == 0) JXL_ASSERT(dst_idx == 0);
 
@@ -55,10 +61,8 @@ G CreateGraphWithYRmse(const std::vector<arma::mat> &images,
       if (progress) progress->report(current_cj, n_jobs(n_images));
     }
 
-    i++;
-    JXL_ASSERT(dst_idx == i * n_images - i * (i + 1));
-
-    if (i == n_images - 1) JXL_ASSERT(dst_idx == n_edges(n_images) / 2);
+    JXL_ASSERT(dst_idx == DestinationIndexDiv2(i + 1, n_images));
+    if (i == n_images - 2) JXL_ASSERT(dst_idx == n_edges(n_images) / 2);
   });
 
   JXL_ASSERT(completed_jobs == n_jobs(n_images));
