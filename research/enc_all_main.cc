@@ -21,6 +21,22 @@ namespace po = boost::program_options;
 using namespace std::chrono;
 using namespace research;
 
+namespace {
+
+template <typename CreateGraphFunction>
+std::vector<EncodedCombinedImage> EncodeImages(
+    ImagesProvider& images, const jxl::ModularOptions& options,
+    const EncodingOptions& encoding_options, bool use_brute_force,
+    CreateGraphFunction create_graph) {
+  auto tree = ComputeMstFromGraph(create_graph());
+  return use_brute_force ? EncodeWithBruteForce<>(images, tree, options,
+                                                  encoding_options, nullptr)
+                         : EncodeWithCombineAll<>(images, tree, options,
+                                                  encoding_options, nullptr);
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
   po::options_description pos_ops;
   pos_ops.add_options()(
@@ -42,6 +58,7 @@ int main(int argc, char* argv[]) {
     // クラスタリング / エンコード
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     // エンコード
+    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
@@ -80,6 +97,7 @@ int main(int argc, char* argv[]) {
   const std::string& cluster_method = vm["clustering"].as<std::string>();
   const size_t k = vm["k"].as<uint16_t>();
   const int margin = vm["margin"].as<uint16_t>();
+  const std::string& cost = vm["cost"].as<std::string>();
   const bool flif_enabled = vm["flif"].as<bool>();
   const std::string& enc_method = vm["enc-method"].as<std::string>();
   const bool measure_time = vm["time"].as<bool>();
@@ -88,7 +106,7 @@ int main(int argc, char* argv[]) {
   if (enc_method == "brute-force") {
     use_brute_force = true;
   } else if (enc_method != "combine-all") {
-    JXL_ABORT("enc-method is invalid");
+    JXL_ABORT("Invalid enc-method '%s'", enc_method.c_str());
   }
 
   const std::vector<std::string>& paths =
@@ -135,6 +153,37 @@ int main(int argc, char* argv[]) {
   ConsoleProgressReporter progress("Encoding");
   std::atomic_bool failed = false;
 
+  std::function<std::vector<EncodedCombinedImage>(ImagesProvider&)>
+      encode_cluster;
+  if (cost == "tree") {
+    encode_cluster = [&](ImagesProvider& cluster_images) {
+      return EncodeImages(cluster_images, options, encoding_options,
+                          use_brute_force, [&]() {
+                            return CreateGraphWithDifferentTree(
+                                cluster_images, options, nullptr);
+                          });
+    };
+  } else if (cost == "y") {
+    encode_cluster = [&](ImagesProvider& cluster_images) {
+      return EncodeImages(cluster_images, options, encoding_options,
+                          use_brute_force, [&]() {
+                            return CreateGraphWithYDistance(
+                                cluster_images, kSelfCostJxl, options, nullptr);
+                          });
+    };
+  } else if (cost == "props") {
+    encode_cluster = [&](ImagesProvider& cluster_images) {
+      return EncodeImages(
+          cluster_images, options, encoding_options, use_brute_force, [&]() {
+            return CreateGraphWithPropsDistance(cluster_images, kSelfCostJxl,
+                                                split, fraction, options,
+                                                nullptr);
+          });
+    };
+  } else {
+    JXL_ABORT("Invalid cost '%s'", cost.c_str());
+  }
+
   // クラスタごとに圧縮
   tbb::parallel_for(size_t(0), n_clusters, [&](size_t cluster_idx) {
     std::vector<std::string> cluster_inputs;
@@ -142,34 +191,26 @@ int main(int argc, char* argv[]) {
       if (assignments[i] == cluster_idx) cluster_inputs.push_back(paths.at(i));
     }
 
-    FileImagesProvider cluster_images(std::move(cluster_inputs));
-    cluster_images.ycocg = true;
-
-    ImageTree<int64_t> tree;
-    {
-      auto gr = CreateGraphWithDifferentTree(cluster_images, options, nullptr);
-      tree = ComputeMstFromGraph(gr);
-    }
-
-    std::vector<EncodedCombinedImage> results;
-    if (use_brute_force) {
-      results = EncodeWithBruteForce<int64_t>(cluster_images, tree, options,
-                                              encoding_options, nullptr);
+    if (cluster_inputs.empty()) {
+      // クラスタに属する画像がないならば、読み取られることはないので ClusterFile は出力しなくて良い
     } else {
-      results = EncodeWithCombineAll<int64_t>(cluster_images, tree, options,
-                                              encoding_options, nullptr);
-    }
+      FileImagesProvider cluster_images(std::move(cluster_inputs));
+      cluster_images.ycocg = true;
 
-    fs::path out_path = out_dir / fmt::format("cluster{}.bin", cluster_idx);
-    std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
-    if (dst) {
-      PackToClusterFile(results, dst);
-      dst.flush();
-    }
+      std::vector<EncodedCombinedImage> results =
+          encode_cluster(cluster_images);
 
-    if (!dst) {
-      std::cerr << "Failed to write " << out_path.c_str() << std::endl;
-      failed = true;
+      fs::path out_path = out_dir / fmt::format("cluster{}.bin", cluster_idx);
+      std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
+      if (dst) {
+        PackToClusterFile(results, dst);
+        dst.flush();
+      }
+
+      if (!dst) {
+        std::cerr << "Failed to write " << out_path.c_str() << std::endl;
+        failed = true;
+      }
     }
 
     progress.report(++n_completed_clusters, n_clusters);

@@ -42,6 +42,9 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
   const size_t n_images = ip.size();
   const size_t n_edges = n_images * (n_images - 1);
   const size_t n_jobs = n_edges + n_images;
+
+  JXL_CHECK(n_images > 0);
+
   std::atomic_size_t completed_jobs = 0;
 
   // クラスタ単位はメモリにすべて乗り切る前提で

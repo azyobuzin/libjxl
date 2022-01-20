@@ -2,6 +2,7 @@
 
 #include "flif/fileio.hpp"
 #include "flif/flif-enc.cpp"
+#include "flif/library/flif.h"
 #include "flif/transform/ycocg.hpp"
 #include "lib/jxl/base/status.h"
 
@@ -137,6 +138,26 @@ jxl::PaddedBytes EncodeColorSignalWithFlif(
   result.append(buf_ptr, buf_ptr + array_size);
   delete[] buf_ptr;
   return result;
+}
+
+static void CleanupFlifEncoder(FLIF_ENCODER** encoder) {
+  flif_destroy_encoder(*encoder);
+}
+
+size_t ComputeEncodedBytesWithFlif(const cv::Mat& rgb_image) {
+  JXL_CHECK(!rgb_image.empty());
+
+  FLIF_ENCODER* __attribute__((cleanup(CleanupFlifEncoder))) encoder =
+      flif_create_encoder();
+  flif_encoder_set_crc_check(encoder, 0);
+  FLIF_IMAGE* fi = flif_import_image_RGB(rgb_image.cols, rgb_image.rows,
+                                         rgb_image.ptr(), rgb_image.step);
+  flif_encoder_add_image_move(encoder, fi);
+  void* blob = nullptr;
+  size_t blob_size = 0;
+  JXL_CHECK(flif_encoder_encode_memory(encoder, &blob, &blob_size));
+  flif_free_memory(blob);
+  return blob_size;
 }
 
 }  // namespace research

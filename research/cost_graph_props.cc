@@ -6,6 +6,8 @@
 #include "cost_graph.h"
 #include "enc_cluster.h"
 #include "enc_flif.h"
+#include "lib/jxl/modular/encoding/enc_ma.h"
+#include "prop_extract.h"
 
 using namespace jxl;
 
@@ -21,17 +23,6 @@ inline size_t n_jobs(size_t n_images) {
   return n_images + n_edges(n_images) / 2;
 }
 
-// 画像の1番目のチャネルの値をベクトルに代入する
-template <typename Vec>
-void ImageToVec(const Image &image, Vec &vec) {
-  JXL_ASSERT(vec.is_vec());
-  auto &c = image.channel[image.nb_meta_channels];
-  vec.set_size(image.w * image.h);
-  for (size_t r = 0; r < image.h; r++) {
-    std::copy(c.Row(r), c.Row(r) + image.w, vec.begin() + (image.w * r));
-  }
-}
-
 inline size_t DestinationIndexDiv2(size_t i, size_t n_images) {
   // 0 + n-1 + n-2 + ... + n-i = i*n - (0 + 1 + 2 + ... + i)
   return i * n_images - i * (i + 1) / 2;
@@ -39,31 +30,26 @@ inline size_t DestinationIndexDiv2(size_t i, size_t n_images) {
 
 }  // namespace
 
-BidirectionalCostGraphResult<double> CreateGraphWithYDistance(
-    ImagesProvider &ip, SelfCostMethod self_cost_method,
-    const jxl::ModularOptions &options_in, ProgressReporter *progress) {
-  JXL_CHECK(self_cost_method == kSelfCostJxl ||
-            self_cost_method == kSelfCostFlif);
-
+BidirectionalCostGraphResult<double> CreateGraphWithPropsDistance(
+    ImagesProvider &ip, SelfCostMethod self_cost_method, size_t split,
+    float fraction, const ModularOptions &options_for_encoding,
+    ProgressReporter *progress) {
   const size_t n_images = ip.size();
   JXL_CHECK(n_images > 0);
 
   std::atomic_size_t completed_jobs = 0;
-  std::vector<arma::vec> images(n_images);
+  std::vector<std::shared_ptr<const Image>> images(n_images);
   std::vector<double> self_costs(n_images);
 
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
-    auto image = std::make_shared<Image>(ip.get(i));
-
-    // arma::vecに詰め替え
-    ImageToVec(*image, images[i]);
+    images[i] = std::make_shared<Image>(ip.get(i));
 
     // self-cost 計算
     switch (self_cost_method) {
       case kSelfCostJxl: {
-        auto ci = CombineImage(std::move(image));
+        auto ci = CombineImage(images[i]);
         BitWriter writer;
-        ModularOptions options = options_in;
+        ModularOptions options = options_for_encoding;
         Tree tree = LearnTree(writer, ci, options, /*max_refs=*/0);
         EncodeImages(writer, ci, options, /*max_refs=*/0, tree);
         self_costs[i] = writer.BitsWritten();
@@ -78,6 +64,31 @@ BidirectionalCostGraphResult<double> CreateGraphWithYDistance(
 
     size_t current_cj = ++completed_jobs;
     if (progress) progress->report(current_cj, n_jobs(n_images));
+  });
+
+  // 量子化方法を決定するために適当なサンプリング
+  jxl::ModularOptions options_for_sampling{.nb_repeats = fraction};
+  std::vector<uint32_t> props_to_use(std::cbegin(kPropsToUse),
+                                     std::cend(kPropsToUse));
+  jxl::TreeSamples tree_samples;
+  SamplesForQuantization samples_for_quantization;
+  for (const auto &image : images) {
+    CollectPixelSamples(*image, options_for_sampling, 0,
+                        samples_for_quantization.group_pixel_count,
+                        samples_for_quantization.channel_pixel_count,
+                        samples_for_quantization.pixel_samples,
+                        samples_for_quantization.diff_samples);
+  }
+  InitializeTreeSamples(tree_samples, props_to_use,
+                        options_for_sampling.max_property_values,
+                        samples_for_quantization);
+
+  // プロパティ計算
+  arma::mat props((size_t(2) << split) * tree_samples.NumProperties(), n_images,
+                  arma::fill::none);
+  tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
+    props.col(i) = ExtractPropertiesFromImage(
+        *images[i], split, options_for_sampling, tree_samples);
   });
 
   // グラフを作成する
@@ -95,7 +106,8 @@ BidirectionalCostGraphResult<double> CreateGraphWithYDistance(
       edges[dst_idx * 2] = {i, j};
       edges[dst_idx * 2 + 1] = {j, i};
       costs[dst_idx * 2] = costs[dst_idx * 2 + 1] =
-          mlpack::metric::EuclideanDistance::Evaluate(images[i], images[j]);
+          mlpack::metric::EuclideanDistance::Evaluate(props.col(i),
+                                                      props.col(j));
       dst_idx++;
 
       size_t current_cj = ++completed_jobs;

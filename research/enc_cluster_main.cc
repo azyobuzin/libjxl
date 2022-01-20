@@ -18,10 +18,24 @@ using namespace research;
 
 namespace {
 
-auto CreateTree(ImagesProvider &images, const jxl::ModularOptions &options) {
-  ConsoleProgressReporter progress("Computing MST");
-  auto gr = CreateGraphWithDifferentTree(images, options, &progress);
-  return ComputeMstFromGraph(gr);
+template <typename CreateGraphFunction>
+std::vector<EncodedCombinedImage> EncodeImages(
+    ImagesProvider &images, const jxl::ModularOptions &options,
+    const EncodingOptions &encoding_options, bool use_brute_force,
+    CreateGraphFunction create_graph) {
+  decltype(ComputeMstFromGraph(
+      create_graph(static_cast<ProgressReporter *>(nullptr)))) tree;
+  {
+    ConsoleProgressReporter progress("Computing MST");
+    auto gr = create_graph(static_cast<ProgressReporter *>(&progress));
+    tree = ComputeMstFromGraph(gr);
+  }
+
+  ConsoleProgressReporter progress("Encoding");
+  return use_brute_force ? EncodeWithBruteForce<>(images, tree, options,
+                                                  encoding_options, &progress)
+                         : EncodeWithCombineAll<>(images, tree, options,
+                                                  encoding_options, &progress);
 }
 
 std::tuple<uint32_t, uint32_t, uint32_t> GetImageInfo(ImagesProvider &images) {
@@ -45,6 +59,8 @@ int main(int argc, char *argv[]) {
   po::options_description ops_desc;
   // clang-format off
   ops_desc.add_options()
+    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
+    ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか（cost = props-* のみ）")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
@@ -81,6 +97,9 @@ int main(int argc, char *argv[]) {
   FileImagesProvider images(paths);
   images.ycocg = true;
 
+  const std::string &cost = vm["cost"].as<std::string>();
+  const size_t split = vm["split"].as<uint16_t>();
+  const float fraction = vm["fraction"].as<float>();
   int refchan = vm["refchan"].as<uint16_t>();
   size_t max_refs = vm["max-refs"].as<size_t>();
   bool flif_enabled = vm["flif"].as<bool>();
@@ -91,32 +110,43 @@ int main(int argc, char *argv[]) {
   if (enc_method == "brute-force") {
     use_brute_force = true;
   } else if (enc_method != "combine-all") {
-    JXL_ABORT("enc-method is invalid");
+    JXL_ABORT("Invalid enc-method '%s'", enc_method.c_str());
   }
 
   // Tortoise相当
   jxl::ModularOptions options{
-      .nb_repeats = vm["fraction"].as<float>(),
+      .nb_repeats = fraction,
       .max_properties = refchan,
       .splitting_heuristics_properties = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3,
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
 
-  auto tree = CreateTree(images, options);
-
   EncodingOptions encoding_options{max_refs, flif_enabled, flif_learn_repeats};
 
   std::vector<EncodedCombinedImage> results;
-  {
-    ConsoleProgressReporter progress("Encoding");
-    if (use_brute_force) {
-      results = EncodeWithBruteForce<int64_t>(images, tree, options,
-                                              encoding_options, &progress);
-    } else {
-      results = EncodeWithCombineAll<int64_t>(images, tree, options,
-                                              encoding_options, &progress);
-    }
+
+  if (cost == "tree") {
+    results = EncodeImages(images, options, encoding_options, use_brute_force,
+                           [&](ProgressReporter *progress) {
+                             return CreateGraphWithDifferentTree(
+                                 images, options, progress);
+                           });
+  } else if (cost == "y") {
+    results = EncodeImages(images, options, encoding_options, use_brute_force,
+                           [&](ProgressReporter *progress) {
+                             return CreateGraphWithYDistance(
+                                 images, kSelfCostJxl, options, progress);
+                           });
+  } else if (cost == "props") {
+    results = EncodeImages(images, options, encoding_options, use_brute_force,
+                           [&](ProgressReporter *progress) {
+                             return CreateGraphWithPropsDistance(
+                                 images, kSelfCostJxl, split, fraction, options,
+                                 progress);
+                           });
+  } else {
+    JXL_ABORT("Invalid cost '%s'", cost.c_str());
   }
 
   for (const auto &x : results) {

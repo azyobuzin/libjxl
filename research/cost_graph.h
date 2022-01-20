@@ -43,19 +43,26 @@ struct ImageTree {
   int32_t root;
 };
 
+enum SelfCostMethod {
+  kSelfCostJxl = 1,
+  kSelfCostFlif = 2,
+};
+
 // ある画像から学習した決定木を使って別の画像を圧縮したときのサイズを利用して、コストグラフを作成する。
 BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress);
 
-// Yチャネル値を使って、コストグラフを作成する。自分自身のコストに JPEG XL を使用する。
-BidirectionalCostGraphResult<double> CreateGraphWithYRmseAndJxlSelfCost(
-    ImagesProvider &images, const jxl::ModularOptions &options,
-    ProgressReporter *progress);
+// Yチャネル値を使って、コストグラフを作成する。
+BidirectionalCostGraphResult<double> CreateGraphWithYDistance(
+    ImagesProvider &images, SelfCostMethod self_cost_method,
+    const jxl::ModularOptions &options, ProgressReporter *progress);
 
-// Yチャネル値を使って、コストグラフを作成する。自分自身のコストに FLIF を使用する。
-BidirectionalCostGraphResult<double> CreateGraphWithYRmseAndFlifSelfCost(
-    ImagesProvider &images, ProgressReporter *progress);
+// JPEG XLのプロパティを使って、コストグラフを作成する。
+BidirectionalCostGraphResult<double> CreateGraphWithPropsDistance(
+    ImagesProvider &images, SelfCostMethod self_cost_method, size_t split,
+    float fraction, const jxl::ModularOptions &options_for_encoding,
+    ProgressReporter *progress);
 
 // 1枚だけで圧縮したときのコストがもっとも小さい画像を根としてMSTを求める。
 // edmonds_optimum_branching.hpp の扱いが厄介なので、 Cost をテンプレートにしないでオーバーロードにする。

@@ -53,9 +53,10 @@ int main(int argc, char *argv[]) {
   po::options_description ops_desc;
   // clang-format off
   ops_desc.add_options()
+    ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか（cost = props-* のみ）")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
-    ("cost", po::value<std::string>()->default_value("tree"), "tree: JPEG XL決定木入れ替え, y-jxl: Yチャネル（自己コスト JPEG XL）, y-flif: Yチャネル（自己コスト FLIF）")
+    ("cost", po::value<std::string>()->default_value("tree"), "tree: JPEG XL決定木入れ替え, y-jxl: Yチャネル（自己コスト JPEG XL）, y-flif: Yチャネル（自己コスト FLIF）, props-jxl: JPEG XLプロパティ（自己コスト JPEG XL）, props-flif: JPEG XLプロパティ（自己コスト FLIF）")
     ("mst", po::bool_switch(), "MSTを求める");
   // clang-format on
 
@@ -85,9 +86,12 @@ int main(int argc, char *argv[]) {
   images.ycocg = true;
   images.only_first_channel = vm["y-only"].as<bool>();
 
+  const size_t split = vm["split"].as<uint16_t>();
+  const float fraction = vm["fraction"].as<float>();
+
   // Tortoise相当
   jxl::ModularOptions options{
-      .nb_repeats = vm["fraction"].as<float>(),
+      .nb_repeats = fraction,
       .splitting_heuristics_properties = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3,
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
@@ -103,13 +107,26 @@ int main(int argc, char *argv[]) {
              images, mst);
   } else if (cost == "y-jxl") {
     PrintDot(WithProgress([&](ProgressReporter *progress) {
-               return CreateGraphWithYRmseAndJxlSelfCost(images, options,
-                                                         progress);
+               return CreateGraphWithYDistance(images, kSelfCostJxl, options,
+                                               progress);
              }),
              images, mst);
   } else if (cost == "y-flif") {
     PrintDot(WithProgress([&](ProgressReporter *progress) {
-               return CreateGraphWithYRmseAndFlifSelfCost(images, progress);
+               return CreateGraphWithYDistance(images, kSelfCostFlif, options,
+                                               progress);
+             }),
+             images, mst);
+  } else if (cost == "props-jxl") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithPropsDistance(images, kSelfCostJxl, split,
+                                                   fraction, options, progress);
+             }),
+             images, mst);
+  } else if (cost == "props-flif") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithPropsDistance(images, kSelfCostFlif, split,
+                                                   fraction, options, progress);
              }),
              images, mst);
   } else {

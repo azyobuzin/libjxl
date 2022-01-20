@@ -222,11 +222,11 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     std::vector<uint8_t> &values = quantized_values[prop_idx];
     uint64_t sum = 0;
     for (auto v : values) sum += v;
-    float mean = static_cast<float>(sum) / values.size();
-    float variance = 0;
+    double mean = static_cast<double>(sum) / values.size();
+    double variance = 0;
     for (auto v : values) variance += (v - mean) * (v - mean);
     variance /= values.size();
-    results[prop_idx] = {mean, sqrtf(variance)};
+    results[prop_idx] = {mean, sqrt(variance)};
   }
 
   return results;
@@ -314,11 +314,8 @@ void CreatePropertyMatrix(ImagesProvider &images, size_t split,
 
   tbb::parallel_for(size_t(0), images.size(), [&](size_t i) {
     auto img = images.get(i);
-    auto result =
+    out_mat.col(i) =
         ExtractPropertiesFromImage(img, split, options, quantizer, nullptr);
-    JXL_ASSERT(result.size() == n_rows);
-    auto col = out_mat.col(i);
-    std::copy(result.begin(), result.end(), col.begin());
   });
 }
 

@@ -12,14 +12,14 @@
 namespace research {
 
 struct ValueDistribution {
-  float mean;
-  float stdev;
+  double mean;
+  double stdev;
 };
 
 typedef std::vector<ValueDistribution> BlockPropertyDistributions;
 
 // BlockPropertyDistributions を展開したもの
-typedef std::vector<float> ImagePropertyVector;
+typedef arma::vec ImagePropertyVector;
 
 struct SamplesForQuantization {
   std::vector<uint32_t> group_pixel_count;
