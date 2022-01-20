@@ -20,15 +20,16 @@ struct LearnedTree {
   size_t n_bits;
 };
 
-LearnedTree LearnTree(Image &&image, const ModularOptions &options_in) {
+LearnedTree LearnTree(std::shared_ptr<const Image> image,
+                      const ModularOptions &options_in) {
   BitWriter writer;
   ModularOptions options = options_in;
   Tree tree = LearnTree(writer, CombineImage(std::move(image)), options, 0);
   return {tree, options.wp_mode, writer.BitsWritten()};
 }
 
-size_t ComputeEncodedBits(Image &&image, const ModularOptions &options,
-                          const Tree &tree) {
+size_t ComputeEncodedBits(std::shared_ptr<const Image> image,
+                          const ModularOptions &options, const Tree &tree) {
   BitWriter writer;
   EncodeImages(writer, CombineImage(std::move(image)), options, 0, tree);
   return writer.BitsWritten();
@@ -88,13 +89,13 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
   std::atomic_size_t completed_jobs = 0;
 
   // クラスタ単位はメモリにすべて乗り切る前提で
-  std::vector<Image> images(n_images);
+  std::vector<std::shared_ptr<const Image>> images(n_images);
 
   // すべての決定木学習を行う
   std::vector<LearnedTree> learned_trees(n_images);
   tbb::parallel_for(size_t(0), n_images, [&](size_t i) {
-    images[i] = ip.get(i);
-    learned_trees[i] = LearnTree(images[i].clone(), options);
+    images[i] = std::make_shared<Image>(ip.get(i));
+    learned_trees[i] = LearnTree(images[i], options);
     completed_jobs++;
     if (progress) progress->report(completed_jobs, n_jobs);
   });
@@ -114,7 +115,7 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
     // 自分自身の決定木で圧縮した場合
     self_costs[i] =
         tree_self.n_bits +
-        ComputeEncodedBits(images[i].clone(), local_options, tree_self.tree);
+        ComputeEncodedBits(images[i], local_options, tree_self.tree);
 
     // この画像を他の決定木で圧縮した場合
     for (size_t j = 0; j < n_images; j++) {
@@ -124,7 +125,7 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
       local_options.wp_mode = tree_other.wp_mode;
       int64_t cost_bits =
           tree_other.n_bits +
-          ComputeEncodedBits(images[i].clone(), local_options, tree_other.tree);
+          ComputeEncodedBits(images[i], local_options, tree_other.tree);
       edges[dst_idx] = {j, i};
       costs[dst_idx] = cost_bits - self_costs[i];
       dst_idx++;

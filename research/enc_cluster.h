@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <ostream>
 #include <vector>
 
@@ -20,9 +21,9 @@ struct EncodingOptions {
 
 // 複数の画像をまとめた画像
 struct CombinedImage {
-  jxl::Image image;
+  std::shared_ptr<const jxl::Image> image;
   size_t n_images;
-  CombinedImage(jxl::Image image, size_t n_images);
+  CombinedImage(std::shared_ptr<const jxl::Image> image, size_t n_images);
 };
 
 struct EncodedCombinedImage {
@@ -39,7 +40,7 @@ struct EncodedCombinedImage {
 
 int FindBestWPMode(const jxl::Image &image);
 
-CombinedImage CombineImage(jxl::Image &&image);
+CombinedImage CombineImage(std::shared_ptr<const jxl::Image> image);
 
 CombinedImage CombineImage(
     const std::vector<std::shared_ptr<const jxl::Image>> &images);

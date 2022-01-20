@@ -99,7 +99,9 @@ int main(int argc, char* argv[]) {
 
   tbb::parallel_for(size_t(0), images.size(), [&](size_t i) {
     // エンコード
-    CombinedImage image = CombineImage(images.get(i));
+    auto image_ptr = std::make_shared<jxl::Image>(images.get(i));
+    jxl::Image& image = *image_ptr;
+
     jxl::BitWriter writer;
     jxl::ThreadPool pool(TbbParallelRunner, nullptr);
 
@@ -109,35 +111,32 @@ int main(int argc, char* argv[]) {
 
       // Global palette
       jxl::Transform global_palette(jxl::TransformId::kPalette);
-      global_palette.begin_c = image.image.nb_meta_channels;
-      global_palette.num_c =
-          image.image.channel.size() - image.image.nb_meta_channels;
-      global_palette.nb_colors =
-          std::min((int)(image.image.w * image.image.h / 8),
-                   std::abs(cparams.palette_colors));
+      global_palette.begin_c = image.nb_meta_channels;
+      global_palette.num_c = image.channel.size() - image.nb_meta_channels;
+      global_palette.nb_colors = std::min((int)(image.w * image.h / 8),
+                                          std::abs(cparams.palette_colors));
       global_palette.ordered_palette = cparams.palette_colors >= 0;
       global_palette.lossy_palette = false;
-      if (jxl::TransformForward(global_palette, image.image, {}, &pool)) {
-        image.image.transform.push_back(std::move(global_palette));
+      if (jxl::TransformForward(global_palette, image, {}, &pool)) {
+        image.transform.push_back(std::move(global_palette));
         std::cerr << images.get_label(i) << " use global palette" << std::endl;
       }
 
       // Local channel palette
       JXL_ASSERT(cparams.channel_colors_percent > 0);
-      for (size_t i = image.image.nb_meta_channels;
-           i < image.image.channel.size(); i++) {
-        size_t real_chan = i - image.image.nb_meta_channels;
+      for (size_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
+        size_t real_chan = i - image.nb_meta_channels;
         int min, max;
-        jxl::compute_minmax(image.image.channel[i], &min, &max);
+        jxl::compute_minmax(image.channel[i], &min, &max);
         int colors = max - min + 1;
         jxl::Transform local_palette(jxl::TransformId::kPalette);
         local_palette.begin_c = i;
         local_palette.num_c = 1;
         local_palette.nb_colors =
-            std::min((int)(image.image.w * image.image.h * 0.8),
+            std::min((int)(image.w * image.h * 0.8),
                      (int)(cparams.channel_colors_percent / 100. * colors));
-        if (jxl::do_transform(image.image, local_palette, {}, &pool)) {
-          image.image.transform.push_back(std::move(local_palette));
+        if (jxl::do_transform(image, local_palette, {}, &pool)) {
+          image.transform.push_back(std::move(local_palette));
           std::cerr << images.get_label(i) << " use local palette (channel "
                     << real_chan << ")" << std::endl;
         }
@@ -148,7 +147,7 @@ int main(int argc, char* argv[]) {
       // すべてのRCTを試す
       // https://github.com/libjxl/libjxl/blob/3d077b281fa65eab595447ae38ba9efc385ba03e/lib/jxl/enc_modular.cc#L1303-L1361
       jxl::Transform sg(jxl::TransformId::kRCT);
-      sg.begin_c = image.image.nb_meta_channels;
+      sg.begin_c = image.nb_meta_channels;
       float best_cost = std::numeric_limits<float>::max();
       size_t best_rct = 0;
       for (int i : {0 * 7 + 0, 0 * 7 + 6, 0 * 7 + 5, 1 * 7 + 3, 3 * 7 + 5,
@@ -156,20 +155,20 @@ int main(int argc, char* argv[]) {
                     1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
                     4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
         sg.rct_type = i;
-        if (jxl::do_transform(image.image, sg, {}, &pool)) {
-          float cost = jxl::EstimateCost(image.image);
+        if (jxl::do_transform(image, sg, {}, &pool)) {
+          float cost = jxl::EstimateCost(image);
           if (cost < best_cost) {
             best_rct = i;
             best_cost = cost;
           }
-          jxl::Transform t = image.image.transform.back();
-          JXL_CHECK(t.Inverse(image.image, {}, &pool));
-          image.image.transform.pop_back();
+          jxl::Transform t = image.transform.back();
+          JXL_CHECK(t.Inverse(image, {}, &pool));
+          image.transform.pop_back();
         }
       }
 
       sg.rct_type = best_rct;
-      if (jxl::do_transform(image.image, sg, {}, &pool)) {
+      if (jxl::do_transform(image, sg, {}, &pool)) {
         if (best_rct % 7 == 6) {
           fmt::print(std::cerr, "{} use YCoCg, permutation {}\n",
                      images.get_label(i), best_rct / 7);
@@ -181,10 +180,11 @@ int main(int argc, char* argv[]) {
     }
 
     jxl::ModularOptions local_options = options;
-    local_options.wp_mode = FindBestWPMode(image.image);
+    local_options.wp_mode = FindBestWPMode(image);
 
-    jxl::Tree tree = LearnTree(writer, image, local_options, 0);
-    EncodeImages(writer, image, local_options, 0, tree);
+    CombinedImage ci = CombineImage(std::move(image_ptr));
+    jxl::Tree tree = LearnTree(writer, ci, local_options, 0);
+    EncodeImages(writer, ci, local_options, 0, tree);
     writer.ZeroPadToByte();
 
     // ファイルに出力

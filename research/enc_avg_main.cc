@@ -82,7 +82,6 @@ struct SumImageBody {
 bool EncodeAndWrite(jxl::Image image, const jxl::ModularOptions& options,
                     const fs::path& dst_path) {
   // enc_without_header_main.cc とほぼ同じ
-  CombinedImage ci = CombineImage(std::move(image));
   jxl::BitWriter writer;
   jxl::ThreadPool pool(TbbParallelRunner, nullptr);
 
@@ -91,36 +90,38 @@ bool EncodeAndWrite(jxl::Image image, const jxl::ModularOptions& options,
 
   // Global palette
   jxl::Transform global_palette(jxl::TransformId::kPalette);
-  global_palette.begin_c = ci.image.nb_meta_channels;
-  global_palette.num_c = ci.image.channel.size() - ci.image.nb_meta_channels;
-  global_palette.nb_colors = std::min((int)(ci.image.w * ci.image.h / 8),
-                                      std::abs(cparams.palette_colors));
+  global_palette.begin_c = image.nb_meta_channels;
+  global_palette.num_c = image.channel.size() - image.nb_meta_channels;
+  global_palette.nb_colors =
+      std::min((int)(image.w * image.h / 8), std::abs(cparams.palette_colors));
   global_palette.ordered_palette = cparams.palette_colors >= 0;
   global_palette.lossy_palette = false;
-  if (jxl::TransformForward(global_palette, ci.image, {}, &pool)) {
-    ci.image.transform.push_back(std::move(global_palette));
+  if (jxl::TransformForward(global_palette, image, {}, &pool)) {
+    image.transform.push_back(std::move(global_palette));
   }
 
   // Local channel palette
   JXL_ASSERT(cparams.channel_colors_percent > 0);
-  for (size_t i = ci.image.nb_meta_channels; i < ci.image.channel.size(); i++) {
+  for (size_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
     int min, max;
-    jxl::compute_minmax(ci.image.channel[i], &min, &max);
+    jxl::compute_minmax(image.channel[i], &min, &max);
     int colors = max - min + 1;
     jxl::Transform local_palette(jxl::TransformId::kPalette);
     local_palette.begin_c = i;
     local_palette.num_c = 1;
     local_palette.nb_colors =
-        std::min((int)(ci.image.w * ci.image.h * 0.8),
+        std::min((int)(image.w * image.h * 0.8),
                  (int)(cparams.channel_colors_percent / 100. * colors));
-    if (jxl::do_transform(ci.image, local_palette, {}, &pool)) {
-      ci.image.transform.push_back(std::move(local_palette));
+    if (jxl::do_transform(image, local_palette, {}, &pool)) {
+      image.transform.push_back(std::move(local_palette));
     }
   }
 
   jxl::ModularOptions local_options = options;
-  local_options.wp_mode = FindBestWPMode(ci.image);
+  local_options.wp_mode = FindBestWPMode(image);
 
+  CombinedImage ci =
+      CombineImage(std::make_shared<jxl::Image>(std::move(image)));
   jxl::Tree tree = LearnTree(writer, ci, local_options, 0);
   EncodeImages(writer, ci, local_options, 0, tree);
   writer.ZeroPadToByte();

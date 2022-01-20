@@ -56,19 +56,24 @@ int FindBestWPMode(const Image &image) {
   return wp_mode;
 }
 
-CombinedImage::CombinedImage(Image image, size_t n_images)
+CombinedImage::CombinedImage(std::shared_ptr<const Image> image,
+                             size_t n_images)
     : n_images(n_images) {
-  JXL_CHECK((image.channel.size() - image.nb_meta_channels) % n_images == 0);
+  JXL_CHECK(image);  // image must be not null
+  JXL_CHECK((image->channel.size() - image->nb_meta_channels) % n_images == 0);
   this->image = std::move(image);
 }
 
-CombinedImage CombineImage(Image &&image) {
-  return {std::forward<Image>(image), 1};
+CombinedImage CombineImage(std::shared_ptr<const Image> image) {
+  return {std::move(image), 1};
 }
 
 CombinedImage CombineImage(
     const std::vector<std::shared_ptr<const Image>> &images) {
   JXL_CHECK(images.size() > 0);
+
+  if (images.size() == 1) return CombineImage(images[0]);
+
   const Image &first_image = *images[0];
 
   // すべての画像が同じ条件であることを確認
@@ -81,13 +86,14 @@ CombinedImage CombineImage(
                 c.vshift == 0);
   }
 
-  Image image(first_image.w, first_image.h, first_image.bitdepth,
-              first_image.channel.size() * images.size());
+  auto image = std::make_shared<Image>(
+      first_image.w, first_image.h, first_image.bitdepth,
+      first_image.channel.size() * images.size());
 
   for (size_t i = 0; i < images.size(); i++) {
     for (size_t j = 0; j < first_image.channel.size(); j++) {
       const Channel &src = images[i]->channel.at(j);
-      Channel &dst = image.channel.at(i * first_image.channel.size() + j);
+      Channel &dst = image->channel.at(i * first_image.channel.size() + j);
       CopyImageTo(src.plane, &dst.plane);
     }
   }
@@ -107,11 +113,12 @@ Status ModularEncodeMulti(
 
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
                ModularOptions &options, size_t max_refs) {
+  const Image &image = *ci.image;
   MultiOptions multi_options{
-      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
+      (image.channel.size() - image.nb_meta_channels) / ci.n_images,
       std::min(max_refs, ci.n_images - 1)};
   ApplyPropertiesOption(options, multi_options);
-  options.wp_mode = FindBestWPMode(ci.image);
+  options.wp_mode = FindBestWPMode(image);
 
   TreeSamples tree_samples;
   if (!tree_samples.SetPredictor(options.predictor, options.wp_tree_mode))
@@ -125,11 +132,11 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
   std::vector<pixel_type> diff_samples;
   std::vector<uint32_t> group_pixel_count;
   std::vector<uint32_t> channel_pixel_count;
-  CollectPixelSamples(ci.image, options, 0, group_pixel_count,
-                      channel_pixel_count, pixel_samples, diff_samples);
+  CollectPixelSamples(image, options, 0, group_pixel_count, channel_pixel_count,
+                      pixel_samples, diff_samples);
 
   StaticPropRange range;
-  range[0] = {{0, static_cast<uint32_t>(ci.image.channel.size())}};
+  range[0] = {{0, static_cast<uint32_t>(image.channel.size())}};
   range[1] = {{0, 1}};  // group id
   std::vector<ModularMultiplierInfo> multiplier_info;
   tree_samples.PreQuantizeProperties(range, multiplier_info, group_pixel_count,
@@ -137,8 +144,8 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
                                      diff_samples, options.max_property_values);
 
   size_t total_pixels = 0;
-  JXL_CHECK(ModularEncodeMulti(ci.image, options, multi_options, nullptr,
-                               nullptr, 0, 0, &tree_samples, &total_pixels));
+  JXL_CHECK(ModularEncodeMulti(image, options, multi_options, nullptr, nullptr,
+                               0, 0, &tree_samples, &total_pixels));
 
   Tree tree = LearnTree(std::move(tree_samples), total_pixels, options,
                         multiplier_info, range);
@@ -162,8 +169,9 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
                   const jxl::ModularOptions &options_in, size_t max_refs,
                   const jxl::Tree &tree) {
+  const Image &image = *ci.image;
   MultiOptions multi_options{
-      (ci.image.channel.size() - ci.image.nb_meta_channels) / ci.n_images,
+      (image.channel.size() - image.nb_meta_channels) / ci.n_images,
       std::min(max_refs, ci.n_images - 1)};
   ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
@@ -171,9 +179,9 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   GroupHeader group_header;
   std::vector<std::vector<Token>> tokens(1);
   std::vector<size_t> image_widths(1);
-  JXL_CHECK(ModularEncodeMulti(ci.image, options, multi_options, nullptr,
-                               nullptr, 0, 0, nullptr, nullptr, &tree,
-                               &group_header, &tokens[0], &image_widths[0]));
+  JXL_CHECK(ModularEncodeMulti(image, options, multi_options, nullptr, nullptr,
+                               0, 0, nullptr, nullptr, &tree, &group_header,
+                               &tokens[0], &image_widths[0]));
 
   HistogramParams params;
   // TODO(research):
