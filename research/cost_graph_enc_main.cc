@@ -16,7 +16,7 @@ BidirectionalCostGraph<int64_t> CreateGraph(
   return CreateGraphWithDifferentTree(images, options, &progress).graph;
 }
 
-std::shared_ptr<ImageTree<int64_t>> CreateTree(
+ImageTree<int64_t> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
   auto gr = CreateGraphWithDifferentTree(images, options, &progress);

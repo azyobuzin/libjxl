@@ -22,9 +22,10 @@ EncodedCombinedImage ComputeEncodedBits(
     jxl_images.reserve(images.size());
     for (const auto &image : images) {
       JXL_CHECK(image->nb_meta_channels == 0 && image->channel.size() == 3);
-      Image y_image(image->w, image->h, image->bitdepth, 1);
-      CopyImageTo(image->channel[0].plane, &y_image.channel[0].plane);
-      jxl_images.emplace_back(new Image(std::move(y_image)));
+      auto y_image =
+          std::make_shared<Image>(image->w, image->h, image->bitdepth, 1);
+      CopyImageTo(image->channel[0].plane, &y_image->channel[0].plane);
+      jxl_images.push_back(std::move(y_image));
     }
   } else {
     jxl_images = images;

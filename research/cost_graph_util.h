@@ -14,31 +14,28 @@ namespace research {
 
 // ImageTree を DOT (Graphviz) 形式で出力する
 template <typename Cost>
-void PrintImageTreeDot(std::ostream &dst, std::shared_ptr<ImageTree<Cost>> root,
-                       ImagesProvider *images) {
-  std::stack<std::shared_ptr<ImageTree<Cost>>> nodes;
-  nodes.push(std::move(root));
+void PrintImageTreeDot(std::ostream& dst, const ImageTree<Cost>& tree,
+                       ImagesProvider* images) {
+  std::stack<int32_t> stack;
+  stack.push(tree.root);
 
   dst << "digraph G {" << std::endl;
 
-  while (!nodes.empty()) {
-    auto node = nodes.top();
-    nodes.pop();
+  while (!stack.empty()) {
+    const auto& node = tree.nodes.at(static_cast<size_t>(stack.top()));
+    stack.pop();
 
     if (images) {
-      dst << node->image_idx << " [label="
-          << boost::escape_dot_string(images->get_label(node->image_idx))
-          << "];" << std::endl;
+      dst << node.image_idx << " [label="
+          << boost::escape_dot_string(images->get_label(node.image_idx)) << "];"
+          << std::endl;
     }
 
-    JXL_ASSERT(node->children.size() == node->costs.size());
-
-    for (size_t i = 0; i < node->children.size(); i++) {
-      auto &child = node->children[i];
-      dst << node->image_idx << "->" << child->image_idx
-          << " [label=" << boost::escape_dot_string(node->costs[i]) << "];"
+    for (const auto& edge : node.children) {
+      dst << node.image_idx << "->" << tree.nodes.at(edge.target).image_idx
+          << " [label=" << boost::escape_dot_string(edge.cost) << "];"
           << std::endl;
-      nodes.push(child);
+      stack.push(edge.target);
     }
   }
 

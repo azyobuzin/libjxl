@@ -11,9 +11,8 @@ namespace {
 
 constexpr int bit_width(unsigned int x) noexcept {
   // https://github.com/boostorg/core/blob/df3b9827cfc9f38080c8d90af048f1f20c449c36/include/boost/core/bit.hpp#L449-L453
-  int countl =
-      x ? __builtin_clz(x) : std::numeric_limits<unsigned int>().digits;
-  return std::numeric_limits<unsigned int>().digits - countl;
+  int countl = x ? __builtin_clz(x) : std::numeric_limits<unsigned int>::digits;
+  return std::numeric_limits<unsigned int>::digits - countl;
 }
 
 U32Enc U32EncForNBytes(uint64_t total_px, uint32_t* lower_bound,
