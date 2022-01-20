@@ -5,7 +5,7 @@
 namespace research {
 
 ConsoleProgressReporter::ConsoleProgressReporter(std::string_view message)
-    : message(message), percent(0) {
+    : message(message), percent(0), closed(false) {
   std::cerr << message << ": 0%\r";
   std::cerr.flush();
 }
