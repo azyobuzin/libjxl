@@ -12,7 +12,7 @@ ConsoleProgressReporter::ConsoleProgressReporter(std::string_view message)
 
 void ConsoleProgressReporter::report(size_t completed_jobs, size_t n_jobs) {
   int_least8_t new_percent = completed_jobs * 100.0 / n_jobs;
-  while (true) {
+  while (!closed.load(std::memory_order_acquire)) {
     auto old_percent = percent.load();
     if (new_percent <= old_percent) return;
     if (percent.compare_exchange_weak(old_percent, new_percent)) {
@@ -28,6 +28,10 @@ void ConsoleProgressReporter::report(size_t completed_jobs, size_t n_jobs) {
   }
 }
 
-ConsoleProgressReporter::~ConsoleProgressReporter() { std::cerr << std::endl; }
+void ConsoleProgressReporter::close() {
+  if (!closed.exchange(true, std::memory_order_release)) std::cerr << std::endl;
+}
+
+ConsoleProgressReporter::~ConsoleProgressReporter() { close(); }
 
 }  // namespace research

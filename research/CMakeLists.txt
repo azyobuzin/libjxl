@@ -62,6 +62,9 @@ target_link_libraries(enc_cluster research)
 add_executable(enc_without_header enc_without_header_main.cc)
 target_link_libraries(enc_without_header research)
 
+add_executable(mktree_trvd mktree_trvd_main.cc)
+target_link_libraries(mktree_trvd research)
+
 add_executable(prop_clustering prop_clustering_main.cc)
 target_link_libraries(prop_clustering research)
 
@@ -77,6 +80,7 @@ add_custom_target(research_exe ALL DEPENDS
   enc_avg
   enc_cluster
   enc_without_header
+  mktree_trvd
   prop_clustering
   prop_extract
 )
