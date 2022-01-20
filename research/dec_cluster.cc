@@ -135,7 +135,7 @@ ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
   pointers_.resize(n_images);
   DecodeClusterPointers(reader, pointers_);
 
-  if (options.reference_type != kParentReferenceNone) {
+  if (NeedsReferences(options.reference_type)) {
     references_.resize(header_.combined_images.size());
     for (size_t i = 0; i < header_.combined_images.size(); i++) {
       references_[i].resize(header_.combined_images[i].n_images - 1);
@@ -174,8 +174,7 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
     auto [idx_offset, bytes_offset] = accum_idx_bytes[i];
 
     const std::vector<uint32_t> *references =
-        options_.reference_type == kParentReferenceNone ? nullptr
-                                                        : &references_.at(i);
+        NeedsReferences(options_.reference_type) ? &references_.at(i) : nullptr;
     Span<const uint8_t> jxl_span(data_.data() + bytes_offset, ci_info.n_bytes);
     Span<const uint8_t> flif_span(data_.data() + bytes_offset + ci_info.n_bytes,
                                   ci_info.n_flif_bytes);
@@ -220,8 +219,7 @@ Status ClusterFileReader::Read(uint32_t idx, Image &out_image) {
 
     // Found
     const std::vector<uint32_t> *references =
-        options_.reference_type == kParentReferenceNone ? nullptr
-                                                        : &references_.at(i);
+        NeedsReferences(options_.reference_type) ? &references_.at(i) : nullptr;
     Span<const uint8_t> jxl_span(data_.data() + accum_bytes, ci_info.n_bytes);
     Span<const uint8_t> flif_span(data_.data() + accum_bytes + ci_info.n_bytes,
                                   ci_info.n_flif_bytes);

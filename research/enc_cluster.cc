@@ -39,7 +39,7 @@ void ApplyPropertiesOption(ModularOptions &options,
 }
 
 void WriteMpz(BitWriter &writer, mpz_class &state, const mpz_class &max_state) {
-  JXL_CHECK(state <= max_state);
+  JXL_ASSERT(state <= max_state);
 
   // 32bit ずつ読み出すので、 32bit 以上を取得できることを確認
   static_assert(std::numeric_limits<decltype(state.get_ui())>::max() >=
@@ -324,7 +324,7 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
   JXL_CHECK(Bundle::Write(header, &header_writer, 0, nullptr));
   EncodeClusterPointers(header_writer, pointers);
 
-  if (parent_reference != kParentReferenceNone) {
+  if (NeedsReferences(parent_reference)) {
     for (const auto &ci : combined_images) {
       JXL_CHECK(ci.references.size() == ci.image_indices.size() - 1);
       EncodeReferences(header_writer, ci.references);
