@@ -11,7 +11,7 @@ using namespace research;
 using namespace jxl;
 
 int main(void) {
-  std::vector<uint32_t> pointers(10);
+  std::vector<uint32_t> pointers(1000);
   for (size_t i = 0; i < pointers.size(); i++) pointers[i] = i;
 
   {

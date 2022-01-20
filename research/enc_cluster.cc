@@ -39,12 +39,18 @@ void ApplyPropertiesOption(ModularOptions &options,
 }
 
 void WriteMpz(BitWriter &writer, mpz_class &state, const mpz_class &max_state) {
+  JXL_CHECK(state <= max_state);
+
+  // 32bit ずつ読み出すので、 32bit 以上を取得できることを確認
+  static_assert(std::numeric_limits<decltype(state.get_ui())>::max() >=
+                std::numeric_limits<uint32_t>::max());
+
   size_t bits_left = mpz_sizeinbase(max_state.get_mpz_t(), 2);
   BitWriter::Allotment allotment(&writer, bits_left);
 
   while (bits_left > 0) {
     size_t bits_to_write = std::min<size_t>(bits_left, 32);
-    writer.Write(bits_to_write, state.get_ui());
+    writer.Write(bits_to_write, static_cast<uint32_t>(state.get_ui()));
     state >>= bits_to_write;
     bits_left -= bits_to_write;
   }
@@ -237,6 +243,7 @@ void EncodeClusterPointers(BitWriter &writer,
         std::find(index_map.begin(), index_map.end(), pointers[i]);
     JXL_CHECK(mapped_idx_iter != index_map.end());
     uint32_t mapped_idx = mapped_idx_iter - index_map.begin();
+    JXL_ASSERT(mapped_idx <= index_map.size() - 1);
     state *= index_map.size();
     state += mapped_idx;
     max_state *= index_map.size();
