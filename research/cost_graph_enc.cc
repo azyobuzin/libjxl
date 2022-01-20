@@ -34,6 +34,49 @@ size_t ComputeEncodedBits(Image &&image, const ModularOptions &options,
   return writer.BitsWritten();
 }
 
+template <typename Cost>
+std::shared_ptr<ImageTree<Cost>> ComputeMstFromGraphImpl(
+    const BidirectionalCostGraphResult<Cost> &gr) {
+  size_t n_images = gr.self_costs.size();
+  const auto &g = gr.graph;
+  JXL_ASSERT(num_vertices(g) == n_images);
+
+  using VD =
+      typename std::remove_reference<decltype(g)>::type::vertex_descriptor;
+  using ED = typename std::remove_reference<decltype(g)>::type::edge_descriptor;
+  static_assert(std::is_same<VD, size_t>::value,
+                "vertex_descriptor must be size_t");
+
+  // 1枚ずつ圧縮したときにもっとも小さくなる画像を根とする
+  std::array<VD, 1> roots = {static_cast<size_t>(
+      std::min_element(gr.self_costs.cbegin(), gr.self_costs.cend()) -
+      gr.self_costs.cbegin())};
+
+  // 有向MST
+  std::vector<ED> edges;
+  edges.reserve(n_images);
+  edmonds_optimum_branching<false, true, true>(
+      g, get(boost::vertex_index_t(), g), get(boost::edge_weight_t(), g),
+      roots.begin(), roots.end(), std::back_inserter(edges));
+
+  std::vector<std::shared_ptr<ImageTree<Cost>>> tree_nodes;
+  tree_nodes.reserve(n_images);
+  for (size_t i = 0; i < n_images; i++)
+    tree_nodes.emplace_back(
+        new ImageTree<Cost>{.image_idx = i, .self_cost = gr.self_costs[i]});
+
+  for (auto &e : edges) {
+    auto &src = tree_nodes.at(source(e, g));
+    auto &tgt = tree_nodes.at(target(e, g));
+    src->children.push_back(tgt);
+    src->costs.push_back(get(boost::edge_weight_t(), g, e));
+    JXL_ASSERT(!tgt->parent);  // parent must be null
+    tgt->parent = src;
+  }
+
+  return tree_nodes.at(roots[0]);
+}
+
 }  // namespace
 
 BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
@@ -99,43 +142,9 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
           G(edges.begin(), edges.end(), costs.begin(), n_images)};
 }
 
-std::shared_ptr<ImageTree<int64_t>> CreateMstWithDifferentTree(
-    ImagesProvider &images, const jxl::ModularOptions &options,
-    ProgressReporter *progress) {
-  const size_t n_images = images.size();
-  auto gr = CreateGraphWithDifferentTree(images, options, progress);
-  auto &g = gr.graph;
-  JXL_ASSERT(gr.self_costs.size() == n_images);
-  JXL_ASSERT(num_vertices(g) == n_images);
-
-  // 1枚ずつ圧縮したときにもっとも小さくなる画像を根とする
-  std::array<G::vertex_descriptor, 1> roots = {static_cast<size_t>(
-      std::min_element(gr.self_costs.cbegin(), gr.self_costs.cend()) -
-      gr.self_costs.cbegin())};
-
-  // 有向MST
-  std::vector<G::edge_descriptor> edges;
-  edges.reserve(n_images);
-  edmonds_optimum_branching<false, true, true>(
-      g, get(boost::vertex_index_t(), g), get(boost::edge_weight_t(), g),
-      roots.begin(), roots.end(), std::back_inserter(edges));
-
-  std::vector<std::shared_ptr<ImageTree<int64_t>>> tree_nodes;
-  tree_nodes.reserve(n_images);
-  for (size_t i = 0; i < n_images; i++)
-    tree_nodes.emplace_back(
-        new ImageTree<int64_t>{.image_idx = i, .self_cost = gr.self_costs[i]});
-
-  for (auto &e : edges) {
-    auto &src = tree_nodes.at(source(e, g));
-    auto &tgt = tree_nodes.at(target(e, g));
-    src->children.push_back(tgt);
-    src->costs.push_back(get(boost::edge_weight_t(), g, e));
-    JXL_ASSERT(!tgt->parent);  // parent must be null
-    tgt->parent = src;
-  }
-
-  return tree_nodes.at(roots[0]);
+std::shared_ptr<ImageTree<int64_t>> ComputeMstFromGraph(
+    const BidirectionalCostGraphResult<int64_t> &gr) {
+  return ComputeMstFromGraphImpl<int64_t>(gr);
 }
 
 }  // namespace research

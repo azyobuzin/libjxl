@@ -20,7 +20,8 @@ namespace {
 
 auto CreateTree(ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Computing MST");
-  return CreateMstWithDifferentTree(images, options, &progress);
+  auto gr = CreateGraphWithDifferentTree(images, options, &progress);
+  return ComputeMstFromGraph(gr);
 }
 
 std::tuple<uint32_t, uint32_t, uint32_t> GetImageInfo(ImagesProvider &images) {
@@ -49,6 +50,7 @@ int main(int argc, char *argv[]) {
     ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
+    ("enc-method", po::value<std::string>()->default_value("brute-force"), "brute-force or combine-all")
     ("out", po::value<std::string>(), "圧縮結果の出力先ファイルパス")
     ("verify", po::bool_switch(), "エンコード結果をデコードして、一致するかを確認する");
   // clang-format on
@@ -68,7 +70,7 @@ int main(int argc, char *argv[]) {
   } catch (const po::error &e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: enc_brute_force [OPTIONS] IMAGE_FILE..." << std::endl
+              << "Usage: enc_cluster [OPTIONS] IMAGE_FILE..." << std::endl
               << ops_desc << std::endl;
     return 1;
   }
@@ -83,6 +85,14 @@ int main(int argc, char *argv[]) {
   size_t max_refs = vm["max-refs"].as<size_t>();
   bool flif_enabled = vm["flif"].as<bool>();
   int flif_learn_repeats = vm["flif-learn"].as<int>();
+
+  const std::string &enc_method = vm["enc-method"].as<std::string>();
+  bool use_brute_force = false;
+  if (enc_method == "brute-force") {
+    use_brute_force = true;
+  } else if (enc_method != "combine-all") {
+    JXL_ABORT("enc-method is invalid");
+  }
 
   // Tortoise相当
   jxl::ModularOptions options{
@@ -100,8 +110,13 @@ int main(int argc, char *argv[]) {
   std::vector<EncodedCombinedImage> results;
   {
     ConsoleProgressReporter progress("Encoding");
-    results = EncodeWithBruteForce<int64_t>(images, tree, options,
-                                            encoding_options, &progress);
+    if (use_brute_force) {
+      results = EncodeWithBruteForce<int64_t>(images, tree, options,
+                                              encoding_options, &progress);
+    } else {
+      results = EncodeWithCombineAll<int64_t>(images, tree, options,
+                                              encoding_options, &progress);
+    }
   }
 
   for (const auto &x : results) {

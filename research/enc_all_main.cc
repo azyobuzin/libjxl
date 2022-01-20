@@ -145,7 +145,11 @@ int main(int argc, char* argv[]) {
     FileImagesProvider cluster_images(std::move(cluster_inputs));
     cluster_images.ycocg = true;
 
-    auto tree = CreateMstWithDifferentTree(cluster_images, options, nullptr);
+    std::shared_ptr<ImageTree<int64_t>> tree;
+    {
+      auto gr = CreateGraphWithDifferentTree(cluster_images, options, nullptr);
+      tree = ComputeMstFromGraph(gr);
+    }
 
     std::vector<EncodedCombinedImage> results;
     if (use_brute_force) {

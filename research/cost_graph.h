@@ -23,6 +23,7 @@ struct BidirectionalCostGraphResult {
   BidirectionalCostGraph<Cost> graph;
 };
 
+// TODO(research): shared_ptrによる木ではなくvectorで実現したい
 template <typename Cost>
 struct ImageTree {
   size_t image_idx;
@@ -38,8 +39,8 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
     ProgressReporter *progress);
 
 // 1枚だけで圧縮したときのコストがもっとも小さい画像を根としてMSTを求める。
-std::shared_ptr<ImageTree<int64_t>> CreateMstWithDifferentTree(
-    ImagesProvider &images, const jxl::ModularOptions &options,
-    ProgressReporter *progress);
+// edmonds_optimum_branching.hpp の扱いが厄介なので、 Cost をテンプレートにしないでオーバーロードにする。
+std::shared_ptr<ImageTree<int64_t>> ComputeMstFromGraph(
+    const BidirectionalCostGraphResult<int64_t> &gr);
 
 }  // namespace research

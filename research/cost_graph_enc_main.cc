@@ -19,7 +19,8 @@ BidirectionalCostGraph<int64_t> CreateGraph(
 std::shared_ptr<ImageTree<int64_t>> CreateTree(
     ImagesProvider &images, const jxl::ModularOptions &options) {
   ConsoleProgressReporter progress("Working");
-  return CreateMstWithDifferentTree(images, options, &progress);
+  auto gr = CreateGraphWithDifferentTree(images, options, &progress);
+  return ComputeMstFromGraph(gr);
 }
 
 struct ImageVertexLabelWriter {

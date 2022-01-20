@@ -51,8 +51,8 @@ target_link_libraries(enc_all research)
 add_executable(enc_avg enc_avg_main.cc)
 target_link_libraries(enc_avg research)
 
-add_executable(enc_brute_force enc_brute_force_main.cc)
-target_link_libraries(enc_brute_force research)
+add_executable(enc_cluster enc_cluster_main.cc)
+target_link_libraries(enc_cluster research)
 
 add_executable(enc_without_header enc_without_header_main.cc)
 target_link_libraries(enc_without_header research)
@@ -70,7 +70,7 @@ add_custom_target(research_exe ALL DEPENDS
   cost_graph_enc
   enc_all
   enc_avg
-  enc_brute_force
+  enc_cluster
   enc_without_header
   prop_clustering
   prop_extract
