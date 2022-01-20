@@ -8,12 +8,14 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MLPACK REQUIRED mlpack>=3.0.0)
 
 # mlpack が OpenMP を使う
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -march=native")
 
 # 共通ライブラリ
 add_library(research STATIC EXCLUDE_FROM_ALL
   cocbo.cc
+  cost_graph.cc
   cost_graph_enc.cc
+  cost_graph_y.cc
   common_cluster.cc
   dec_cluster.cc
   dec_flif.cc
@@ -27,8 +29,10 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   prop_extract.cc
   flif/common.cpp
   flif/io.cpp
+  flif/lodepng.cpp
   flif/image/color_range.cpp
   flif/image/crc32k.cpp
+  flif/library/flif-interface.cpp
   flif/maniac/bit.cpp
   flif/maniac/chance.cpp
   flif/maniac/symbol.cpp
@@ -42,8 +46,8 @@ target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmon
 add_executable(benchmark_random_decode benchmark_random_decode_main.cc)
 target_link_libraries(benchmark_random_decode research)
 
-add_executable(cost_graph_enc cost_graph_enc_main.cc)
-target_link_libraries(cost_graph_enc research)
+add_executable(cost_graph cost_graph_main.cc)
+target_link_libraries(cost_graph research)
 
 add_executable(enc_all enc_all_main.cc)
 target_link_libraries(enc_all research)
@@ -67,7 +71,7 @@ add_custom_target(research_exe ALL DEPENDS
   cjxl
   djxl
   benchmark_random_decode
-  cost_graph_enc
+  cost_graph
   enc_all
   enc_avg
   enc_cluster

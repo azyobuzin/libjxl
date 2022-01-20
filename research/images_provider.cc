@@ -29,6 +29,10 @@ Image FileImagesProvider::get(size_t idx) {
   return img;
 }
 
+cv::Mat FileImagesProvider::GetBgr(size_t idx) {
+  return cv::imread(paths.at(idx), cv::IMREAD_COLOR);
+}
+
 std::string FileImagesProvider::get_label(size_t idx) const {
   return std::filesystem::path(paths.at(idx)).stem().string();
 }

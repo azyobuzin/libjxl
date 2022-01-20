@@ -305,4 +305,21 @@ ImagePropertyVector ExtractPropertiesFromImage(
   return result;
 }
 
+void CreatePropertyMatrix(ImagesProvider &images, size_t split,
+                          const ModularOptions &options,
+                          const TreeSamples &quantizer, arma::mat &out_mat) {
+  const size_t n_rows =
+      (size_t(2) << split /* 2^split * 2 */) * quantizer.NumProperties();
+  out_mat.set_size(n_rows, images.size());
+
+  tbb::parallel_for(size_t(0), images.size(), [&](size_t i) {
+    auto img = images.get(i);
+    auto result =
+        ExtractPropertiesFromImage(img, split, options, quantizer, nullptr);
+    JXL_ASSERT(result.size() == n_rows);
+    auto col = out_mat.col(i);
+    std::copy(result.begin(), result.end(), col.begin());
+  });
+}
+
 }  // namespace research

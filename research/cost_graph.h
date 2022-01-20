@@ -48,9 +48,21 @@ BidirectionalCostGraphResult<int64_t> CreateGraphWithDifferentTree(
     ImagesProvider &images, const jxl::ModularOptions &options,
     ProgressReporter *progress);
 
+// Yチャネル値を使って、コストグラフを作成する。自分自身のコストに JPEG XL を使用する。
+BidirectionalCostGraphResult<double> CreateGraphWithYRmseAndJxlSelfCost(
+    ImagesProvider &images, const jxl::ModularOptions &options,
+    ProgressReporter *progress);
+
+// Yチャネル値を使って、コストグラフを作成する。自分自身のコストに FLIF を使用する。
+BidirectionalCostGraphResult<double> CreateGraphWithYRmseAndFlifSelfCost(
+    ImagesProvider &images, ProgressReporter *progress);
+
 // 1枚だけで圧縮したときのコストがもっとも小さい画像を根としてMSTを求める。
 // edmonds_optimum_branching.hpp の扱いが厄介なので、 Cost をテンプレートにしないでオーバーロードにする。
 ImageTree<int64_t> ComputeMstFromGraph(
     const BidirectionalCostGraphResult<int64_t> &gr);
+
+ImageTree<double> ComputeMstFromGraph(
+    const BidirectionalCostGraphResult<double> &gr);
 
 }  // namespace research

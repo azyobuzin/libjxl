@@ -1,5 +1,6 @@
 #pragma once
 
+#include <opencv2/core.hpp>
 #include <optional>
 
 #include "lib/jxl/modular/modular_image.h"
@@ -10,6 +11,7 @@ class ImagesProvider {
  public:
   virtual size_t size() const noexcept = 0;
   virtual jxl::Image get(size_t idx) = 0;
+  virtual cv::Mat GetBgr(size_t idx) = 0;
   virtual std::string get_label(size_t idx) const;
 
  protected:
@@ -23,6 +25,7 @@ class FileImagesProvider : public ImagesProvider {
   FileImagesProvider(std::vector<std::string> paths) : paths(paths) {}
   size_t size() const noexcept override { return paths.size(); }
   jxl::Image get(size_t idx) override;
+  cv::Mat GetBgr(size_t idx) override;
   std::string get_label(size_t idx) const override;
 
   // YCoCg 変換を行うか

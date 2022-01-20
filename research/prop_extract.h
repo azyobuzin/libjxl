@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <mlpack/core.hpp>
 #include <string>
 #include <vector>
 
@@ -46,12 +47,16 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     const jxl::ModularOptions &options, const jxl::TreeSamples &quantizer);
 
 // 画像を split 回分割して、画像の特徴を抽出し、ベクトルとして並べる
-ImagePropertyVector
-ExtractPropertiesFromImage(const jxl::Image &image, size_t split,
-                           const jxl::ModularOptions &options,
-                           const jxl::TreeSamples &quantizer,
-                           std::vector<
-                               std::
-                                   string> *out_vector_descriptions = nullptr /**< [out] \c nullptr でなければ、結果の各要素の説明を出力する */);
+ImagePropertyVector ExtractPropertiesFromImage(
+    const jxl::Image &image, size_t split, const jxl::ModularOptions &options,
+    const jxl::TreeSamples &quantizer,
+    std::vector<std::string> *out_vector_descriptions =
+        nullptr /**< [out] \c nullptr でなければ、結果の各要素の説明を出力する */);
+
+// ExtractPropertiesFromImage をすべての画像に対して適用した行列を作成する
+void CreatePropertyMatrix(ImagesProvider &images, size_t split,
+                          const jxl::ModularOptions &options,
+                          const jxl::TreeSamples &quantizer,
+                          arma::mat &out_mat);
 
 }  // namespace research

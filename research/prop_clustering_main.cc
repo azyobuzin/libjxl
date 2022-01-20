@@ -89,19 +89,9 @@ int main(int argc, char *argv[]) {
   InitializeTreeSamples(tree_samples, props_to_use, options.max_property_values,
                         samples_for_quantization);
 
-  const size_t n_rows =
-      (size_t(2) << split /* 2^split * 2 */) * props_to_use.size();
-  arma::mat prop_mat(n_rows, paths.size(), arma::fill::none);
-
-  // 特徴量を prop_mat に代入していく
-  tbb::parallel_for(size_t(0), paths.size(), [&](size_t i) {
-    auto img = images.get(i);
-    auto result =
-        ExtractPropertiesFromImage(img, split, options, tree_samples, nullptr);
-    JXL_ASSERT(result.size() == n_rows);
-    auto col = prop_mat.col(i);
-    std::copy(result.begin(), result.end(), col.begin());
-  });
+  // 特徴量計算
+  arma::mat prop_mat;
+  CreatePropertyMatrix(images, split, options, tree_samples, prop_mat);
 
   // クラスタリング
   arma::Row<size_t> assignments;

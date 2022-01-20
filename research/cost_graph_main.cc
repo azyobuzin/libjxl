@@ -10,19 +10,6 @@ using namespace research;
 
 namespace {
 
-BidirectionalCostGraph<int64_t> CreateGraph(
-    ImagesProvider &images, const jxl::ModularOptions &options) {
-  ConsoleProgressReporter progress("Working");
-  return CreateGraphWithDifferentTree(images, options, &progress).graph;
-}
-
-ImageTree<int64_t> CreateTree(
-    ImagesProvider &images, const jxl::ModularOptions &options) {
-  ConsoleProgressReporter progress("Working");
-  auto gr = CreateGraphWithDifferentTree(images, options, &progress);
-  return ComputeMstFromGraph(gr);
-}
-
 struct ImageVertexLabelWriter {
   ImagesProvider &images;
 
@@ -31,6 +18,26 @@ struct ImageVertexLabelWriter {
         << "]";
   }
 };
+
+template <typename F>
+auto WithProgress(F f) {
+  ConsoleProgressReporter progress("Working");
+  return f(static_cast<ProgressReporter *>(&progress));
+}
+
+template <typename Cost>
+void PrintDot(const BidirectionalCostGraphResult<Cost> &gr,
+              ImagesProvider &images, bool mst) {
+  if (mst) {
+    auto tree = ComputeMstFromGraph(gr);
+    PrintImageTreeDot(std::cout, tree, &images);
+  } else {
+    auto &graph = gr.graph;
+    boost::write_graphviz(
+        std::cout, graph, ImageVertexLabelWriter{images},
+        boost::make_label_writer(get(boost::edge_weight_t(), graph)));
+  }
+}
 
 }  // namespace
 
@@ -48,6 +55,7 @@ int main(int argc, char *argv[]) {
   ops_desc.add_options()
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
+    ("cost", po::value<std::string>()->default_value("tree"), "tree: JPEG XL決定木入れ替え, y-jxl: Yチャネル（自己コスト JPEG XL）, y-flif: Yチャネル（自己コスト FLIF）")
     ("mst", po::bool_switch(), "MSTを求める");
   // clang-format on
 
@@ -66,7 +74,7 @@ int main(int argc, char *argv[]) {
   } catch (const po::error &e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: cost_graph_enc [OPTIONS] IMAGE_FILE..." << std::endl
+              << "Usage: cost_graph [OPTIONS] IMAGE_FILE..." << std::endl
               << ops_desc << std::endl;
     return 1;
   }
@@ -85,14 +93,28 @@ int main(int argc, char *argv[]) {
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
 
-  if (vm["mst"].as<bool>()) {
-    auto tree = CreateTree(images, options);
-    PrintImageTreeDot(std::cout, tree, &images);
+  const std::string &cost = vm["cost"].as<std::string>();
+  bool mst = vm["mst"].as<bool>();
+
+  if (cost == "tree") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithDifferentTree(images, options, progress);
+             }),
+             images, mst);
+  } else if (cost == "y-jxl") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithYRmseAndJxlSelfCost(images, options,
+                                                         progress);
+             }),
+             images, mst);
+  } else if (cost == "y-flif") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithYRmseAndFlifSelfCost(images, progress);
+             }),
+             images, mst);
   } else {
-    auto graph = CreateGraph(images, options);
-    boost::write_graphviz(
-        std::cout, graph, ImageVertexLabelWriter{images},
-        boost::make_label_writer(get(boost::edge_weight_t(), graph)));
+    std::cerr << "Invalid cost '" << cost << "'\n";
+    return 1;
   }
 
   return 0;
