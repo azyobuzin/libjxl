@@ -1,5 +1,7 @@
 #include "enc_cluster.h"
 
+#include <gmpxx.h>
+
 #include "common_cluster.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
@@ -20,17 +22,13 @@ namespace {
 // splitting_heuristics_properties に max_properties と max_refs を反映する
 void ApplyPropertiesOption(ModularOptions &options,
                            const MultiOptions &multi_options) {
-  // channel_per_image == 0 → JPEG XL のデフォルト通りにやる
-  // max_refs == 0 → 明示的に画像を参照しないので、 max_properties に制限を設けない
-  if (multi_options.max_refs > 0 && multi_options.channel_per_image > 0) {
-    options.max_properties =
-        std::min(options.max_properties,
-                 static_cast<int>(multi_options.channel_per_image) - 1);
+  if (NeedsReferences(multi_options.reference_type)) {
+    JXL_CHECK(multi_options.references != nullptr);
   }
 
   uint32_t n_ref_channels =
-      options.max_properties +
-      multi_options.max_refs * multi_options.channel_per_image;
+      options.max_properties + multi_options.n_parent_ref();
+
   for (uint32_t i = 0; i < n_ref_channels * 4; i++) {
     uint32_t prop = kNumNonrefProperties + i;
     if (std::find(options.splitting_heuristics_properties.begin(),
@@ -38,6 +36,20 @@ void ApplyPropertiesOption(ModularOptions &options,
                   prop) == options.splitting_heuristics_properties.end())
       options.splitting_heuristics_properties.push_back(prop);
   }
+}
+
+void WriteMpz(BitWriter &writer, mpz_class &state, const mpz_class &max_state) {
+  size_t bits_left = mpz_sizeinbase(max_state.get_mpz_t(), 2);
+  BitWriter::Allotment allotment(&writer, bits_left);
+
+  while (bits_left > 0) {
+    size_t bits_to_write = std::min<size_t>(bits_left, 32);
+    writer.Write(bits_to_write, state.get_ui());
+    state >>= bits_to_write;
+    bits_left -= bits_to_write;
+  }
+
+  ReclaimAndCharge(&writer, &allotment, 0, nullptr);
 }
 
 }  // namespace
@@ -56,21 +68,16 @@ int FindBestWPMode(const Image &image) {
   return wp_mode;
 }
 
-CombinedImage::CombinedImage(std::shared_ptr<const Image> image,
-                             size_t n_images)
-    : n_images(n_images) {
-  JXL_CHECK(image);  // image must be not null
-  JXL_CHECK((image->channel.size() - image->nb_meta_channels) % n_images == 0);
-  this->image = std::move(image);
-}
-
 CombinedImage CombineImage(std::shared_ptr<const Image> image) {
+  JXL_CHECK(image);  // image must be not null
   return {std::move(image), 1};
 }
 
 CombinedImage CombineImage(
-    const std::vector<std::shared_ptr<const Image>> &images) {
+    const std::vector<std::shared_ptr<const Image>> &images,
+    std::vector<uint32_t> references) {
   JXL_CHECK(images.size() > 0);
+  JXL_CHECK(references.size() == images.size() - 1);
 
   if (images.size() == 1) return CombineImage(images[0]);
 
@@ -91,6 +98,9 @@ CombinedImage CombineImage(
       first_image.channel.size() * images.size());
 
   for (size_t i = 0; i < images.size(); i++) {
+    // 以前の画像しか参照してはいけない
+    if (i > 0) JXL_CHECK(references[i - 1] < i);
+
     for (size_t j = 0; j < first_image.channel.size(); j++) {
       const Channel &src = images[i]->channel.at(j);
       Channel &dst = image->channel.at(i * first_image.channel.size() + j);
@@ -98,7 +108,8 @@ CombinedImage CombineImage(
     }
   }
 
-  return {std::move(image), images.size()};
+  return {std::move(image), static_cast<uint32_t>(images.size()),
+          std::move(references)};
 }
 
 // modular/encoding/enc_encoding.cc で定義。
@@ -112,11 +123,14 @@ Status ModularEncodeMulti(
     std::vector<Token> *tokens = nullptr, size_t *width = nullptr);
 
 Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
-               ModularOptions &options, size_t max_refs) {
+               ModularOptions &options, ParentReferenceType parent_reference) {
   const Image &image = *ci.image;
   MultiOptions multi_options{
-      (image.channel.size() - image.nb_meta_channels) / ci.n_images,
-      std::min(max_refs, ci.n_images - 1)};
+      .channel_per_image =
+          static_cast<uint32_t>(image.channel.size() - image.nb_meta_channels) /
+          ci.n_images,
+      .reference_type = parent_reference,
+      .references = &ci.references};
   ApplyPropertiesOption(options, multi_options);
   options.wp_mode = FindBestWPMode(image);
 
@@ -167,12 +181,15 @@ Tree LearnTree(BitWriter &writer, const CombinedImage &ci,
 }
 
 void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
-                  const jxl::ModularOptions &options_in, size_t max_refs,
-                  const jxl::Tree &tree) {
+                  const jxl::ModularOptions &options_in,
+                  ParentReferenceType parent_reference, const jxl::Tree &tree) {
   const Image &image = *ci.image;
   MultiOptions multi_options{
-      (image.channel.size() - image.nb_meta_channels) / ci.n_images,
-      std::min(max_refs, ci.n_images - 1)};
+      .channel_per_image =
+          static_cast<uint32_t>(image.channel.size() - image.nb_meta_channels) /
+          ci.n_images,
+      .reference_type = parent_reference,
+      .references = &ci.references};
   ModularOptions options = options_in;
   ApplyPropertiesOption(options, multi_options);
 
@@ -197,7 +214,68 @@ void EncodeImages(jxl::BitWriter &writer, const CombinedImage &ci,
   WriteTokens(tokens[0], code, context_map, &writer, 0, nullptr);
 }
 
+void EncodeClusterPointers(BitWriter &writer,
+                           const std::vector<uint32_t> pointers) {
+  const uint32_t n_images = pointers.size();
+  if (n_images == 0) return;
+  if (n_images == 1) {
+    JXL_CHECK(pointers[0] == 0);
+    return;
+  }
+
+  // 値域を小さくするため、未使用のインデックスのインデックスを書き込む
+  std::vector<uint32_t> index_map(n_images);
+  for (uint32_t i = 0; i < n_images; i++) index_map[i] = i;
+
+  // 符号化する値
+  mpz_class state = 0;
+  // 理論上の最大値
+  mpz_class max_state = 0;
+
+  for (uint32_t i = 0; i < n_images - 1; i++) {
+    auto mapped_idx_iter =
+        std::find(index_map.begin(), index_map.end(), pointers[i]);
+    JXL_CHECK(mapped_idx_iter != index_map.end());
+    uint32_t mapped_idx = mapped_idx_iter - index_map.begin();
+    state *= index_map.size();
+    state += mapped_idx;
+    max_state *= index_map.size();
+    max_state += index_map.size() - 1;
+    index_map.erase(mapped_idx_iter);
+  }
+
+  JXL_ASSERT(index_map.size() == 1);
+  JXL_CHECK(pointers[n_images - 1] == index_map[0]);
+
+  WriteMpz(writer, state, max_state);
+}
+
+void EncodeReferences(BitWriter &writer,
+                      const std::vector<uint32_t> references) {
+  const uint32_t n_refs = references.size();
+  if (n_refs == 0) return;
+  JXL_CHECK(references[0] == 0);
+  if (n_refs == 1) {
+    return;
+  }
+
+  // TODO(research): もっと偏りが出るはずなので、最適ではない
+
+  mpz_class state, max_state = 0;
+
+  for (uint32_t i = 1; i < n_refs; i++) {
+    JXL_CHECK(references[i] <= i);
+    state *= i + 1;
+    state += references[i];
+    max_state *= i + 1;
+    max_state += i;
+  }
+
+  WriteMpz(writer, state, max_state);
+}
+
 void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
+                       ParentReferenceType parent_reference,
                        std::ostream &dst) {
   JXL_CHECK(combined_images.size() > 0);
 
@@ -227,16 +305,25 @@ void PackToClusterFile(const std::vector<EncodedCombinedImage> &combined_images,
     ci_info.n_flif_bytes = static_cast<uint32_t>(ci.flif_data.size());
   }
 
-  header.pointers.resize(n_images);
+  std::vector<uint32_t> pointers(n_images);
   size_t ptr_idx = 0;
   for (const auto &ci : combined_images) {
-    for (auto idx : ci.image_indices) header.pointers.at(idx) = ptr_idx++;
+    for (auto idx : ci.image_indices) pointers.at(idx) = ptr_idx++;
   }
 
   JXL_ASSERT(ptr_idx == n_images);
 
   BitWriter header_writer;
   JXL_CHECK(Bundle::Write(header, &header_writer, 0, nullptr));
+  EncodeClusterPointers(header_writer, pointers);
+
+  if (parent_reference != kParentReferenceNone) {
+    for (const auto &ci : combined_images) {
+      JXL_CHECK(ci.references.size() == ci.image_indices.size() - 1);
+      EncodeReferences(header_writer, ci.references);
+    }
+  }
+
   header_writer.ZeroPadToByte();
 
   Span<const uint8_t> header_span = header_writer.GetSpan();

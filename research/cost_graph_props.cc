@@ -50,8 +50,8 @@ BidirectionalCostGraphResult<double> CreateGraphWithPropsDistance(
         auto ci = CombineImage(images[i]);
         BitWriter writer;
         ModularOptions options = options_for_encoding;
-        Tree tree = LearnTree(writer, ci, options, /*max_refs=*/0);
-        EncodeImages(writer, ci, options, /*max_refs=*/0, tree);
+        Tree tree = LearnTree(writer, ci, options, kParentReferenceNone);
+        EncodeImages(writer, ci, options, kParentReferenceNone, tree);
         self_costs[i] = writer.BitsWritten();
       } break;
 

@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
     // エンコード
     ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
+    ("parent-ref", po::value<int>()->default_value(4), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照, 3: 前フレーム同チャネル参照, 4: 前フレーム全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("enc-method", po::value<std::string>()->default_value("brute-force"), "brute-force or combine-all")
@@ -130,9 +130,10 @@ int main(int argc, char* argv[]) {
               << " s" << std::endl;
   }
 
-  int refchan = vm["refchan"].as<uint16_t>();
-  size_t max_refs = vm["max-refs"].as<size_t>();
-  int flif_learn_repeats = vm["flif-learn"].as<int>();
+  const int refchan = vm["refchan"].as<uint16_t>();
+  const jxl::ParentReferenceType parent_ref =
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<int>());
+  const int flif_learn_repeats = vm["flif-learn"].as<int>();
   const fs::path& out_dir = vm["out-dir"].as<fs::path>();
 
   fs::create_directories(out_dir);
@@ -147,7 +148,8 @@ int main(int argc, char* argv[]) {
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
-  EncodingOptions encoding_options{max_refs, flif_enabled, flif_learn_repeats};
+  EncodingOptions encoding_options{parent_ref, flif_enabled,
+                                   flif_learn_repeats};
 
   std::atomic_size_t n_completed_clusters = 0;
   ConsoleProgressReporter progress("Encoding");
@@ -203,7 +205,7 @@ int main(int argc, char* argv[]) {
       fs::path out_path = out_dir / fmt::format("cluster{}.bin", cluster_idx);
       std::ofstream dst(out_path, std::ios_base::out | std::ios_base::binary);
       if (dst) {
-        PackToClusterFile(results, dst);
+        PackToClusterFile(results, parent_ref, dst);
         dst.flush();
       }
 

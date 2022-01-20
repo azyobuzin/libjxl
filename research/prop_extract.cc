@@ -195,8 +195,7 @@ BlockPropertyDistributions ExtractPropertiesFromBlock(
     while (next_px != sampling_points.cend()) {
       size_t y = next_px->first;
       const pixel_type *p = channel.Row(y);
-      PrecomputeReferences(channel, y, image, i, options.max_properties, {},
-                           &references);
+      PrecomputeReferences(channel, y, image, i, {}, &references);
       InitPropsRow(&properties, static_props, y);
 
       for (; next_px != sampling_points.cend() && next_px->first == y;

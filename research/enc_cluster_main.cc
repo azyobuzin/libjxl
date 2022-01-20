@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか（cost = props-* のみ）")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
-    ("max-refs", po::value<size_t>()->default_value(1), "画像の参照数")
+    ("parent-ref", po::value<int>()->default_value(4), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照, 3: 前フレーム同チャネル参照, 4: 前フレーム全チャネル参照")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("enc-method", po::value<std::string>()->default_value("brute-force"), "brute-force or combine-all")
@@ -100,10 +100,11 @@ int main(int argc, char *argv[]) {
   const std::string &cost = vm["cost"].as<std::string>();
   const size_t split = vm["split"].as<uint16_t>();
   const float fraction = vm["fraction"].as<float>();
-  int refchan = vm["refchan"].as<uint16_t>();
-  size_t max_refs = vm["max-refs"].as<size_t>();
-  bool flif_enabled = vm["flif"].as<bool>();
-  int flif_learn_repeats = vm["flif-learn"].as<int>();
+  const int refchan = vm["refchan"].as<uint16_t>();
+  const jxl::ParentReferenceType parent_ref =
+      static_cast<jxl::ParentReferenceType>(vm["parent-ref"].as<int>());
+  const bool flif_enabled = vm["flif"].as<bool>();
+  const int flif_learn_repeats = vm["flif-learn"].as<int>();
 
   const std::string &enc_method = vm["enc-method"].as<std::string>();
   bool use_brute_force = false;
@@ -122,7 +123,8 @@ int main(int argc, char *argv[]) {
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
 
-  EncodingOptions encoding_options{max_refs, flif_enabled, flif_learn_repeats};
+  EncodingOptions encoding_options{parent_ref, flif_enabled,
+                                   flif_learn_repeats};
 
   std::vector<EncodedCombinedImage> results;
 
@@ -174,7 +176,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    PackToClusterFile(results, dst);
+    PackToClusterFile(results, parent_ref, dst);
     dst.flush();
 
     if (!dst) {
@@ -192,7 +194,7 @@ int main(int argc, char *argv[]) {
 
       // ClusterFile形式に変換
       std::ostringstream oss(std::ios_base::out | std::ios_base::binary);
-      PackToClusterFile(results, oss);
+      PackToClusterFile(results, parent_ref, oss);
 
       if (!oss) {
         std::cerr << "Failed to write to buffer" << std::endl;
@@ -202,9 +204,9 @@ int main(int argc, char *argv[]) {
       // ClusterFile形式から読み出す
       std::string buf = oss.str();
       jxl::Span<const uint8_t> span(buf);
-      DecodingOptions options{
-          width,   height,       {n_channel, max_refs},
-          refchan, flif_enabled, /*flif_additional_props=*/0};
+      DecodingOptions options{width,        height,
+                              n_channel,    parent_ref,
+                              flif_enabled, /*flif_additional_props=*/0};
       ClusterFileReader reader(options, span);
       if (!reader.ReadAll(decoded_images)) {
         std::cerr << "Failed to decode images" << std::endl;

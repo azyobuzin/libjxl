@@ -17,9 +17,7 @@ struct CombinedImageInfo : public jxl::Fields {
     jxl::Bundle::Init(this);
   }
 
-#if JXL_IS_DEBUG_BUILD
-  const char* Name() const override { return "research::CombinedImageInfo"; }
-#endif
+  JXL_FIELDS_NAME(research::CombinedImageInfo)
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 
@@ -42,16 +40,11 @@ struct ClusterHeader : public jxl::Fields {
         n_channel_(n_channel),
         flif_enabled_(flif_enabled) {}
 
-#if JXL_IS_DEBUG_BUILD
-  const char* Name() const override { return "research::ClusterHeader"; }
-#endif
+  JXL_FIELDS_NAME(research::ClusterHeader)
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 
   std::vector<CombinedImageInfo> combined_images;
-
-  // 元のi番目の画像は、combined_imagesの何番目の画像か
-  std::vector<uint32_t> pointers;
 
  private:
   uint32_t width_;
@@ -63,9 +56,7 @@ struct ClusterHeader : public jxl::Fields {
 struct IndexFields : public jxl::Fields {
   IndexFields() { jxl::Bundle::Init(this); }
 
-#if JXL_IS_DEBUG_BUILD
-  const char* Name() const override { return "research::IndexFields"; }
-#endif
+  JXL_FIELDS_NAME(research::IndexFields)
 
   jxl::Status VisitFields(jxl::Visitor* JXL_RESTRICT visitor) override;
 

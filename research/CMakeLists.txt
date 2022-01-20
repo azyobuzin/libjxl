@@ -6,6 +6,7 @@ find_package(TBB REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MLPACK REQUIRED mlpack>=3.0.0)
+pkg_check_modules(GMP REQUIRED gmpxx)
 
 # mlpack が OpenMP を使う
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -march=native")
@@ -40,7 +41,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   flif/transform/factory.cpp
 )
 target_compile_options(research PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(research jxl-static fmt::fmt glpk ${Boost_LIBRARIES} ${MLPACK_LINK_LIBRARIES} ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})
+target_link_libraries(research jxl-static fmt::fmt glpk ${Boost_LIBRARIES} ${GMP_LINK_LIBRARIES} ${MLPACK_LINK_LIBRARIES} ${OpenCV_LIBS} ${TBB_IMPORTED_TARGETS})
 target_include_directories(research PUBLIC "${PROJECT_SOURCE_DIR}" PRIVATE edmonds-alg/src)
 
 # Executables
@@ -71,6 +72,9 @@ target_link_libraries(prop_clustering research)
 add_executable(prop_extract prop_extract_main.cc)
 target_link_libraries(prop_extract research)
 
+add_executable(test_cluster_pointers test_cluster_pointers_main.cc)
+target_link_libraries(test_cluster_pointers research)
+
 add_custom_target(research_exe ALL DEPENDS
   cjxl
   djxl
@@ -83,4 +87,5 @@ add_custom_target(research_exe ALL DEPENDS
   mktree_trvd
   prop_clustering
   prop_extract
+  test_cluster_pointers
 )

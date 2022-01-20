@@ -183,8 +183,9 @@ int main(int argc, char* argv[]) {
     local_options.wp_mode = FindBestWPMode(image);
 
     CombinedImage ci = CombineImage(std::move(image_ptr));
-    jxl::Tree tree = LearnTree(writer, ci, local_options, 0);
-    EncodeImages(writer, ci, local_options, 0, tree);
+    jxl::Tree tree =
+        LearnTree(writer, ci, local_options, jxl::kParentReferenceNone);
+    EncodeImages(writer, ci, local_options, jxl::kParentReferenceNone, tree);
     writer.ZeroPadToByte();
 
     // ファイルに出力

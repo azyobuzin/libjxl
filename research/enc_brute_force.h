@@ -20,8 +20,8 @@ struct EncodingTreeNode {
 
 EncodedCombinedImage ComputeEncodedBits(
     std::vector<std::shared_ptr<const Image>> &&images,
-    std::vector<uint32_t> &&image_indices, const ModularOptions &options_in,
-    const EncodingOptions &encoding_options);
+    std::vector<uint32_t> &&image_indices, std::vector<uint32_t> &&references,
+    const ModularOptions &options_in, const EncodingOptions &encoding_options);
 
 // MSTをとりあえず1枚ずつ圧縮した形式にする
 template <typename Cost>
@@ -43,7 +43,7 @@ std::vector<EncodingTreeNode> CreateEncodingTree(
       uint32_t(0), static_cast<uint32_t>(encoded_data.size()), [&](uint32_t i) {
         encoded_data[i] =
             ComputeEncodedBits({std::make_shared<const Image>(images.get(i))},
-                               {i}, options, encoding_options);
+                               {i}, {}, options, encoding_options);
         if (progress) progress->report(++n_completed, encoded_data.size() * 2);
       });
 

@@ -14,8 +14,8 @@ namespace research::detail {
 
 EncodedCombinedImage ComputeEncodedBits(
     std::vector<std::shared_ptr<const Image>> &&images,
-    std::vector<uint32_t> &&image_indices, const ModularOptions &options_in,
-    const EncodingOptions &encoding_options) {
+    std::vector<uint32_t> &&image_indices, std::vector<uint32_t> &&references,
+    const ModularOptions &options_in, const EncodingOptions &encoding_options) {
   std::vector<std::shared_ptr<const Image>> jxl_images;
 
   if (encoding_options.flif_enabled) {
@@ -31,12 +31,11 @@ EncodedCombinedImage ComputeEncodedBits(
     jxl_images = images;
   }
 
-  CombinedImage ci = CombineImage(jxl_images);
+  CombinedImage ci = CombineImage(jxl_images, references);
   BitWriter writer;
   ModularOptions options = options_in;
-  Tree tree = LearnTree(writer, ci, options, encoding_options.max_refs);
-  EncodeImages(writer, ci, options, encoding_options.max_refs, tree);
-  size_t n_bits = writer.BitsWritten();
+  Tree tree = LearnTree(writer, ci, options, encoding_options.parent_reference);
+  EncodeImages(writer, ci, options, encoding_options.parent_reference, tree);
   writer.ZeroPadToByte();
 
   PaddedBytes flif_data;
@@ -46,8 +45,8 @@ EncodedCombinedImage ComputeEncodedBits(
                                   encoding_options.flif_additional_props);
   }
 
-  return {std::move(image_indices), std::move(images),
-          std::move(writer).TakeBytes(), n_bits, std::move(flif_data)};
+  return {std::move(image_indices), std::move(images), std::move(references),
+          std::move(writer).TakeBytes(), std::move(flif_data)};
 }
 
 namespace {
@@ -90,13 +89,23 @@ struct Traverse {
       auto images = node.encoded_image.included_images;
       images.insert(images.end(), child.encoded_image.included_images.cbegin(),
                     child.encoded_image.included_images.cend());
+
       auto image_indices = node.encoded_image.image_indices;
       image_indices.insert(image_indices.end(),
                            child.encoded_image.image_indices.cbegin(),
                            child.encoded_image.image_indices.cend());
+
+      auto references = node.encoded_image.references;
+      uint32_t ref_base = node.encoded_image.references.size();
+      references.reserve(references.size() + ref_base + 1);
+      references.push_back(0);  // 子の最初の画像は親を参照する
+      // 子の参照を修正する
+      for (uint32_t r : child.encoded_image.references)
+        references.push_back(ref_base + r);
+
       EncodedCombinedImage combined_bits =
           ComputeEncodedBits(std::move(images), std::move(image_indices),
-                             options, encoding_options);
+                             std::move(references), options, encoding_options);
 
       if (combined_bits.n_bytes() <
           node.encoded_image.n_bytes() + child.encoded_image.n_bytes()) {
@@ -130,6 +139,11 @@ EncodedCombinedImage EncodeWithCombineAllCore(
   images.reserve(tree.size());
   std::vector<uint32_t> image_indices;
   image_indices.reserve(tree.size());
+  std::vector<uint32_t> references;
+  references.reserve(tree.size() - 1);
+
+  // ノードが何フレーム目に挿入されたかを記録する
+  std::vector<uint32_t> frame_idx_by_node_idx(tree.size());
 
   // 行きがけ順を求める
   std::stack<int32_t> stack;
@@ -139,6 +153,8 @@ EncodedCombinedImage EncodeWithCombineAllCore(
     int32_t node_idx = stack.top();
     stack.pop();
 
+    frame_idx_by_node_idx.at(node_idx) = images.size();
+
     const auto &node = tree.at(node_idx);
     images.insert(images.end(), node.encoded_image.included_images.begin(),
                   node.encoded_image.included_images.end());
@@ -146,11 +162,15 @@ EncodedCombinedImage EncodeWithCombineAllCore(
                          node.encoded_image.image_indices.begin(),
                          node.encoded_image.image_indices.end());
 
+    if (node.parent >= 0) {
+      references.push_back(frame_idx_by_node_idx.at(node.parent));
+    }
+
     for (auto x : node.children) stack.push(x);
   }
 
   return ComputeEncodedBits(std::move(images), std::move(image_indices),
-                            options, encoding_options);
+                            std::move(references), options, encoding_options);
 }
 
 }  // namespace

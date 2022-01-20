@@ -23,14 +23,16 @@ LearnedTree LearnTree(std::shared_ptr<const Image> image,
                       const ModularOptions &options_in) {
   BitWriter writer;
   ModularOptions options = options_in;
-  Tree tree = LearnTree(writer, CombineImage(std::move(image)), options, 0);
+  Tree tree = LearnTree(writer, CombineImage(std::move(image)), options,
+                        kParentReferenceNone);
   return {tree, options.wp_mode, writer.BitsWritten()};
 }
 
 size_t ComputeEncodedBits(std::shared_ptr<const Image> image,
                           const ModularOptions &options, const Tree &tree) {
   BitWriter writer;
-  EncodeImages(writer, CombineImage(std::move(image)), options, 0, tree);
+  EncodeImages(writer, CombineImage(std::move(image)), options,
+               kParentReferenceNone, tree);
   return writer.BitsWritten();
 }
 

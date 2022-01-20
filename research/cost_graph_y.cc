@@ -64,8 +64,8 @@ BidirectionalCostGraphResult<double> CreateGraphWithYDistance(
         auto ci = CombineImage(std::move(image));
         BitWriter writer;
         ModularOptions options = options_in;
-        Tree tree = LearnTree(writer, ci, options, /*max_refs=*/0);
-        EncodeImages(writer, ci, options, /*max_refs=*/0, tree);
+        Tree tree = LearnTree(writer, ci, options, kParentReferenceNone);
+        EncodeImages(writer, ci, options, kParentReferenceNone, tree);
         self_costs[i] = writer.BitsWritten();
       } break;
 
