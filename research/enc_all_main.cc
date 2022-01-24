@@ -61,6 +61,7 @@ int main(int argc, char* argv[]) {
     ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("parent-ref", po::value<int>()->default_value(4), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照, 3: 前フレーム同チャネル参照, 4: 前フレーム全チャネル参照")
+    ("speed", po::value<uint16_t>()->default_value(1), "1: tortoise, 2: kitten, 3: squirrel")
     ("flif", po::bool_switch(), "色チャネルをFLIFで符号化")
     ("flif-learn", po::value<int>()->default_value(2), "FLIF学習回数")
     ("enc-method", po::value<std::string>()->default_value("brute-force"), "brute-force or combine-all")
@@ -148,6 +149,16 @@ int main(int argc, char* argv[]) {
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
+
+  auto speed = static_cast<jxl::SpeedTier>(vm["speed"].as<uint16_t>());
+  if (speed >= jxl::SpeedTier::kSquirrel) {
+    options.splitting_heuristics_properties.resize(8);
+    options.max_property_values = 32;
+  } else if (speed >= jxl::SpeedTier::kKitten) {
+    options.splitting_heuristics_properties.resize(10);
+    options.max_property_values = 64;
+  }
+
   EncodingOptions encoding_options{parent_ref, flif_enabled,
                                    flif_learn_repeats};
 
