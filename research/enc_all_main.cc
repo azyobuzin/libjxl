@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
     // クラスタリング / エンコード
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     // エンコード
-    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
+    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ, random")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("parent-ref", po::value<int>()->default_value(4), "0: 参照なし, 1: 親の同チャネル参照, 2: 親の全チャネル参照, 3: 前フレーム同チャネル参照, 4: 前フレーム全チャネル参照")
     ("speed", po::value<uint16_t>()->default_value(1), "1: tortoise, 2: kitten, 3: squirrel")
@@ -192,6 +192,14 @@ int main(int argc, char* argv[]) {
                                                 split, fraction, options,
                                                 nullptr);
           });
+    };
+  } else if (cost == "random") {
+    encode_cluster = [&](ImagesProvider& cluster_images) {
+      return EncodeImages(cluster_images, options, encoding_options,
+                          use_brute_force, [&]() {
+                            return CreateGraphWithRandomCost(
+                                cluster_images, kSelfCostJxl, options, nullptr);
+                          });
     };
   } else {
     JXL_ABORT("Invalid cost '%s'", cost.c_str());

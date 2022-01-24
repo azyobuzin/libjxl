@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
     ("split", po::value<uint16_t>()->default_value(2), "画像を何回分割するか（cost = props-* のみ）")
     ("fraction", po::value<float>()->default_value(.5f), "サンプリングする画素の割合 (0, 1]")
     ("y-only", po::bool_switch(), "Yチャネルのみを利用する")
-    ("cost", po::value<std::string>()->default_value("tree"), "tree: JPEG XL決定木入れ替え, y-jxl: Yチャネル（自己コスト JPEG XL）, y-flif: Yチャネル（自己コスト FLIF）, props-jxl: JPEG XLプロパティ（自己コスト JPEG XL）, props-flif: JPEG XLプロパティ（自己コスト FLIF）")
+    ("cost", po::value<std::string>()->default_value("tree"), "tree: JPEG XL決定木入れ替え, y-jxl: Yチャネル（自己コスト JPEG XL）, y-flif: Yチャネル（自己コスト FLIF）, props-jxl: JPEG XLプロパティ（自己コスト JPEG XL）, props-flif: JPEG XLプロパティ（自己コスト FLIF）, random-jxl, random-flif")
     ("mst", po::bool_switch(), "MSTを求める");
   // clang-format on
 
@@ -127,6 +127,18 @@ int main(int argc, char *argv[]) {
     PrintDot(WithProgress([&](ProgressReporter *progress) {
                return CreateGraphWithPropsDistance(images, kSelfCostFlif, split,
                                                    fraction, options, progress);
+             }),
+             images, mst);
+  } else if (cost == "random-jxl") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithRandomCost(images, kSelfCostJxl, options,
+                                                progress);
+             }),
+             images, mst);
+  } else if (cost == "random-flif") {
+    PrintDot(WithProgress([&](ProgressReporter *progress) {
+               return CreateGraphWithRandomCost(images, kSelfCostFlif, options,
+                                                progress);
              }),
              images, mst);
   } else {

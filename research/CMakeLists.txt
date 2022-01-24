@@ -17,6 +17,7 @@ add_library(research STATIC EXCLUDE_FROM_ALL
   cost_graph.cc
   cost_graph_enc.cc
   cost_graph_props.cc
+  cost_graph_random.cc
   cost_graph_y.cc
   common_cluster.cc
   dec_cluster.cc

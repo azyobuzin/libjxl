@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
     ("k", po::value<uint16_t>()->default_value(2), "kmeansの場合はクラスタ数。cocboの場合はクラスタあたりの画像数")
     ("margin", po::value<uint16_t>()->default_value(2), "(cocbo) kのマージン")
     ("random", po::bool_switch(), "乱数シードをランダムに設定する")
-    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ")
+    ("cost", po::value<std::string>()->default_value("tree"), "MSTに使用するコスト tree: JPEG XL決定木入れ替え, y: Yチャネル, props: JPEG XLプロパティ, random")
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("out", po::value<fs::path>()->required(), "出力先テキストファイル");
   // clang-format on
@@ -158,6 +158,11 @@ int main(int argc, char* argv[]) {
     compute_mst = MakeComputeMstFunction([&](ImagesProvider& cluster_images) {
       return CreateGraphWithPropsDistance(cluster_images, kSelfCostFlif, split,
                                           fraction, options, nullptr);
+    });
+  } else if (cost == "random") {
+    compute_mst = MakeComputeMstFunction([&](ImagesProvider& cluster_images) {
+      return CreateGraphWithRandomCost(cluster_images, kSelfCostFlif, options,
+                                       nullptr);
     });
   } else {
     JXL_ABORT("Invalid cost '%s'", cost.c_str());

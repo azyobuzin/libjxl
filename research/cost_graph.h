@@ -64,6 +64,10 @@ BidirectionalCostGraphResult<double> CreateGraphWithPropsDistance(
     float fraction, const jxl::ModularOptions &options_for_encoding,
     ProgressReporter *progress);
 
+BidirectionalCostGraphResult<double> CreateGraphWithRandomCost(
+    ImagesProvider &images, SelfCostMethod self_cost_method,
+    const jxl::ModularOptions &options, ProgressReporter *progress);
+
 // 1枚だけで圧縮したときのコストがもっとも小さい画像を根としてMSTを求める。
 // edmonds_optimum_branching.hpp の扱いが厄介なので、 Cost をテンプレートにしないでオーバーロードにする。
 ImageTree<int64_t> ComputeMstFromGraph(
