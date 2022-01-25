@@ -1,8 +1,9 @@
 // enc_all でエンコードしたファイルの決定木を集計する
 
+#include <fmt/core.h>
 #include <tbb/blocked_range.h>
+#include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for.h>
-#include <tbb/parallel_reduce.h>
 
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/program_options.hpp>
@@ -13,9 +14,9 @@
 
 #include "common_cluster.h"
 #include "dec_cluster.h"
-#include "fmt/color.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
@@ -89,6 +90,7 @@ int main(int argc, char* argv[]) {
   std::set<uint32_t> used_cluster(index.assignments.cbegin(),
                                   index.assignments.cend());
   std::atomic_size_t property_counts[kMaxPropertyCount] = {0};
+  tbb::concurrent_vector<uint16_t> freqs;
 
   tbb::parallel_for(
       tbb::blocked_range<uint32_t>(0, index.n_clusters),
@@ -150,25 +152,70 @@ int main(int argc, char* argv[]) {
                   Span<const uint8_t> ci_span(
                       offsets[ci_idx], header.combined_images[ci_idx].n_bytes);
                   BitReader ci_reader(ci_span);
+
                   Tree tree;
                   const size_t tree_size_limit =
                       std::numeric_limits<int32_t>::max();
-                  if (!DecodeTree(&ci_reader, &tree, tree_size_limit))
+                  if (!DecodeTree(&ci_reader, &tree, tree_size_limit)) {
                     JXL_ABORT("Failed to decode tree (cluster %" PRIu32
                               ", ci %" PRIuS ")",
                               cluster_idx, ci_idx);
+                  }
+
+                  ANSCode code;
+                  std::vector<uint8_t> context_map;
+                  if (!DecodeHistograms(&ci_reader, (tree.size() + 1) / 2,
+                                        &code, &context_map)) {
+                    JXL_ABORT("Failed to decode histograms (cluster %" PRIu32
+                              ", ci %" PRIuS ")",
+                              cluster_idx, ci_idx);
+                  }
+
+                  if (code.use_prefix_code) {
+                    JXL_ABORT("Prefix code not supported (cluster %" PRIu32
+                              ", ci %" PRIuS ")",
+                              cluster_idx, ci_idx);
+                  }
+
                   JXL_CHECK(ci_reader.Close());
 
+                  // プロパティの出現回数
+                  std::set<uint8_t> used_context;
                   for (const PropertyDecisionNode& node : tree) {
-                    if (node.property < 0) continue;  // leaf
                     if (node.property >=
                         static_cast<int16_t>(kMaxPropertyCount)) {
                       JXL_ABORT("Too large property index %" PRId16
                                 " (cluster %" PRIu32 ", ci %" PRIuS ")",
                                 node.property, cluster_idx, ci_idx);
+                    } else if (node.property >= 0) {
+                      property_counts[node.property].fetch_add(
+                          1, std::memory_order_release);
+                    } else {
+                      // leaf
+                      used_context.insert(context_map.at(node.lchild));
                     }
-                    property_counts[node.property].fetch_add(
-                        1, std::memory_order_release);
+                  }
+
+                  // シンボルの出現回数
+                  for (uint8_t ctx : used_context) {
+                    const AliasTable::Entry* table =
+                        &reinterpret_cast<AliasTable::Entry*>(
+                            code.alias_tables
+                                .get())[ctx << code.log_alpha_size];
+                    for (size_t entry_idx = 0;
+                         entry_idx < (1u << code.log_alpha_size); entry_idx++) {
+                      const AliasTable::Entry* entry = &table[entry_idx];
+                      uint16_t freq = entry->freq0 ^ entry->freq1_xor_freq0;
+                      if (freq == 0) {
+                        // エントリーなし
+                        continue;
+                      }
+                      freqs.push_back(freq);
+                      if (freq == ANS_TAB_SIZE) {
+                        // 唯一のエントリー
+                        break;
+                      }
+                    }
                   }
                 });
           }
@@ -190,7 +237,13 @@ int main(int argc, char* argv[]) {
         std::to_string(property_counts[i].load(std::memory_order_acquire));
   }
 
-  std::cout << header << "\n" << values << std::endl;
+  std::cout << header << "\n" << values << "\n\n";
+
+  for (auto freq : freqs) {
+    std::cout << freq << ",";
+  }
+
+  std::cout << std::endl;
 
   return 0;
 }
