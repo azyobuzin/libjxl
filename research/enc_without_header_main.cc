@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
     ("refchan", po::value<uint16_t>()->default_value(0), "画像内のチャンネル参照数")
     ("palette", po::bool_switch(), "パレット変換を有効化する")
     ("rct", po::bool_switch(), "色変換をすべて試す")
+    ("speed", po::value<uint16_t>()->default_value(1), "1: tortoise, 2: kitten, 3: squirrel")
     ("out-dir", po::value<fs::path>()->required(), "圧縮結果の出力先");
   // clang-format on
 
@@ -88,6 +89,15 @@ int main(int argc, char* argv[]) {
                                           4, 5, 6, 7, 8},
       .max_property_values = 256,
       .predictor = jxl::Predictor::Variable};
+
+  auto speed = static_cast<jxl::SpeedTier>(vm["speed"].as<uint16_t>());
+  if (speed >= jxl::SpeedTier::kSquirrel) {
+    options.splitting_heuristics_properties.resize(8);
+    options.max_property_values = 32;
+  } else if (speed >= jxl::SpeedTier::kKitten) {
+    options.splitting_heuristics_properties.resize(10);
+    options.max_property_values = 64;
+  }
 
   const auto& out_dir = vm["out-dir"].as<fs::path>();
   fs::create_directories(out_dir);
@@ -137,8 +147,10 @@ int main(int argc, char* argv[]) {
                      (int)(cparams.channel_colors_percent / 100. * colors));
         if (jxl::do_transform(image, local_palette, {}, &pool)) {
           image.transform.push_back(std::move(local_palette));
-          std::cerr << images.get_label(i) << " use local palette (channel "
-                    << real_chan << ")" << std::endl;
+          if (JXL_DEBUG_V_LEVEL >= 2) {
+            std::cerr << images.get_label(i) << " use local palette (channel "
+                      << real_chan << ")" << std::endl;
+          }
         }
       }
     }
@@ -169,12 +181,15 @@ int main(int argc, char* argv[]) {
 
       sg.rct_type = best_rct;
       if (jxl::do_transform(image, sg, {}, &pool)) {
-        if (best_rct % 7 == 6) {
-          fmt::print(std::cerr, "{} use YCoCg, permutation {}\n",
-                     images.get_label(i), best_rct / 7);
-        } else {
-          fmt::print(std::cerr, "{} use RCT {}, {}, {}\n", images.get_label(i),
-                     best_rct / 7, (best_rct % 7) >> 1, (best_rct % 7) & 1);
+        if (JXL_DEBUG_V_LEVEL >= 2) {
+          if (best_rct % 7 == 6) {
+            fmt::print(std::cerr, "{} use YCoCg, permutation {}\n",
+                       images.get_label(i), best_rct / 7);
+          } else {
+            fmt::print(std::cerr, "{} use RCT {}, {}, {}\n",
+                       images.get_label(i), best_rct / 7, (best_rct % 7) >> 1,
+                       (best_rct % 7) & 1);
+          }
         }
       }
     }
