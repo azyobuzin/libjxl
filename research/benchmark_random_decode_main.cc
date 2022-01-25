@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
   } catch (const po::error& e) {
     std::cerr << e.what() << std::endl
               << std::endl
-              << "Usage: benchmark_random_decode [OPTIONS] INDEX_DIRECTORY..."
+              << "Usage: benchmark_random_decode [OPTIONS] INDEX_DIRECTORY"
               << std::endl
               << ops_desc << std::endl;
     return 1;
