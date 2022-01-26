@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
             for (size_t entry_idx = 0; entry_idx < (1u << code.log_alpha_size);
                  entry_idx++) {
               const AliasTable::Entry *entry = &table[entry_idx];
-              uint16_t freq = entry->freq0 ^ entry->freq1_xor_freq0;
+              uint16_t freq = entry->freq0;
               if (freq == 0) {
                 // エントリーなし
                 continue;
@@ -184,10 +184,6 @@ int main(int argc, char *argv[]) {
                 }
               } else {
                 freqs.push_back(freq);
-              }
-              if (freq == ANS_TAB_SIZE) {
-                // 唯一のエントリー
-                break;
               }
             }
           }

@@ -89,6 +89,8 @@ int main(int argc, char* argv[]) {
   IndexFields index = ReadIndex(input_dir);
   std::set<uint32_t> used_cluster(index.assignments.cbegin(),
                                   index.assignments.cend());
+  std::atomic_size_t tree_bits = 0;
+  std::atomic_size_t histo_bits = 0;
   std::atomic_size_t property_counts[kMaxPropertyCount] = {0};
   tbb::concurrent_vector<uint16_t> freqs;
 
@@ -161,6 +163,8 @@ int main(int argc, char* argv[]) {
                               ", ci %" PRIuS ")",
                               cluster_idx, ci_idx);
                   }
+                  size_t bit_pos = ci_reader.TotalBitsConsumed();
+                  tree_bits.fetch_add(bit_pos, std::memory_order_release);
 
                   ANSCode code;
                   std::vector<uint8_t> context_map;
@@ -170,6 +174,8 @@ int main(int argc, char* argv[]) {
                               ", ci %" PRIuS ")",
                               cluster_idx, ci_idx);
                   }
+                  histo_bits.fetch_add(ci_reader.TotalBitsConsumed() - bit_pos,
+                                       std::memory_order_release);
 
                   if (code.use_prefix_code) {
                     JXL_ABORT("Prefix code not supported (cluster %" PRIu32
@@ -205,16 +211,8 @@ int main(int argc, char* argv[]) {
                     for (size_t entry_idx = 0;
                          entry_idx < (1u << code.log_alpha_size); entry_idx++) {
                       const AliasTable::Entry* entry = &table[entry_idx];
-                      uint16_t freq = entry->freq0 ^ entry->freq1_xor_freq0;
-                      if (freq == 0) {
-                        // エントリーなし
-                        continue;
-                      }
-                      freqs.push_back(freq);
-                      if (freq == ANS_TAB_SIZE) {
-                        // 唯一のエントリー
-                        break;
-                      }
+                      uint16_t freq = entry->freq0;
+                      if (freq > 0) freqs.push_back(freq);
                     }
                   }
                 });
@@ -237,7 +235,11 @@ int main(int argc, char* argv[]) {
         std::to_string(property_counts[i].load(std::memory_order_acquire));
   }
 
-  std::cout << header << "\n" << values << "\n\n";
+  std::cout << header << "\n"
+            << values
+            << "\ntree bits: " << tree_bits.load(std::memory_order_acquire)
+            << "\nhisto bits: " << histo_bits.load(std::memory_order_acquire)
+            << "\n\n";
 
   for (auto freq : freqs) {
     std::cout << freq << ",";
