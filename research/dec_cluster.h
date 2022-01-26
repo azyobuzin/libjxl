@@ -26,9 +26,11 @@ class ClusterFileReader {
     return static_cast<uint32_t>(pointers_.size());
   }
 
-  jxl::Status ReadAll(std::vector<jxl::Image>& out_images);
+  jxl::Status ReadAll(std::vector<jxl::Image>& out_images,
+                      std::vector<size_t>* context_freqs = nullptr);
 
-  jxl::Status Read(uint32_t idx, jxl::Image& out_image);
+  jxl::Status Read(uint32_t idx, jxl::Image& out_image,
+                   std::vector<size_t>* context_freqs = nullptr);
 
  private:
   const DecodingOptions& options_;

@@ -20,7 +20,8 @@ Status ModularDecodeMulti(BitReader *br, Image &image, size_t group_id,
                           const ANSCode *global_code,
                           const std::vector<uint8_t> *global_ctx_map,
                           const DecodingRect *rect,
-                          const MultiOptions &multi_options);
+                          const MultiOptions &multi_options,
+                          std::vector<size_t> *context_freqs);
 
 namespace {
 
@@ -31,7 +32,8 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
                            const std::vector<uint32_t> *references,
                            Span<const uint8_t> jxl_data,
                            Span<const uint8_t> flif_data,
-                           std::vector<Image> &out_images) {
+                           std::vector<Image> &out_images,
+                           std::vector<size_t> *context_freqs) {
   // FLIF がある場合は、Yチャネルのみ JPEG XL になっている
   MultiOptions multi_options = {decoding_options.n_channel,
                                 decoding_options.reference_type, references};
@@ -66,9 +68,10 @@ Status DecodeCombinedImage(const DecodingOptions &decoding_options,
            multi_options.channel_per_image * out_images.size());
   ModularOptions options;
   DecodingRect dr = {"research::DecodeCombinedImage", 0, 0, 0};
-  status = JXL_STATUS(ModularDecodeMulti(&reader, ci, 0, &options, &tree, &code,
-                                         &context_map, &dr, multi_options),
-                      "ModularDecodeMulti");
+  status = JXL_STATUS(
+      ModularDecodeMulti(&reader, ci, 0, &options, &tree, &code, &context_map,
+                         &dr, multi_options, context_freqs),
+      "ModularDecodeMulti");
   if (!status) {
     [[maybe_unused]] auto ignored = reader.Close();
     return status;
@@ -148,7 +151,8 @@ ClusterFileReader::ClusterFileReader(const DecodingOptions &options,
   data_ = reader.GetSpan();
 }
 
-Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
+Status ClusterFileReader::ReadAll(std::vector<Image> &out_images,
+                                  std::vector<size_t> *context_freqs) {
   // 画像列のインデックスから、本来のインデックスを求められるようにする
   std::vector<size_t> reverse_pointer(n_images());
   for (size_t i = 0; i < n_images(); i++) reverse_pointer.at(pointers_[i]) = i;
@@ -180,9 +184,10 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
                                   ci_info.n_flif_bytes);
 
     std::vector<Image> images(ci_info.n_images);
-    Status decode_status = JXL_STATUS(
-        DecodeCombinedImage(options_, references, jxl_span, flif_span, images),
-        "failed to decode %" PRIuS, i);
+    Status decode_status =
+        JXL_STATUS(DecodeCombinedImage(options_, references, jxl_span,
+                                       flif_span, images, context_freqs),
+                   "failed to decode %" PRIuS, i);
 
     if (decode_status) {
       for (size_t j = 0; j < ci_info.n_images; j++) {
@@ -203,7 +208,8 @@ Status ClusterFileReader::ReadAll(std::vector<Image> &out_images) {
   return status;
 }
 
-Status ClusterFileReader::Read(uint32_t idx, Image &out_image) {
+Status ClusterFileReader::Read(uint32_t idx, Image &out_image,
+                               std::vector<size_t> *context_freqs) {
   idx = pointers_.at(idx);
 
   uint32_t accum_idx = 0, accum_bytes = 0;
@@ -224,8 +230,8 @@ Status ClusterFileReader::Read(uint32_t idx, Image &out_image) {
     Span<const uint8_t> flif_span(data_.data() + accum_bytes + ci_info.n_bytes,
                                   ci_info.n_flif_bytes);
     std::vector<Image> images(ci_info.n_images);
-    Status status =
-        DecodeCombinedImage(options_, references, jxl_span, flif_span, images);
+    Status status = DecodeCombinedImage(options_, references, jxl_span,
+                                        flif_span, images, context_freqs);
     if (status) {
       out_image = std::move(images.at(idx - accum_idx));
     }

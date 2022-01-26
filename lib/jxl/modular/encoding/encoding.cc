@@ -158,7 +158,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const weighted::Header &wp_header,
                                  pixel_type chan, size_t group_id, Image *image,
                                  const DecodingRect *rect,
-                                 const jxl::MultiOptions &multi_options) {
+                                 const MultiOptions &multi_options,
+                                 std::vector<size_t> *context_freqs) {
   Channel &channel = image->channel[chan];
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
@@ -178,10 +179,16 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   // From here on, tree lookup returns a *clustered* context ID.
   // This avoids an extra memory lookup after tree traversal.
+  uint32_t max_context = 0;
   for (size_t i = 0; i < tree.size(); i++) {
     if (tree[i].property0 == -1) {
       tree[i].childID = context_map[tree[i].childID];
+      if (tree[i].childID + 1 > max_context) max_context = tree[i].childID + 1;
     }
+  }
+
+  if (context_freqs && context_freqs->size() < max_context) {
+    context_freqs->resize(max_context, 0);
   }
 
   JXL_DEBUG_V(3, "Decoded MA tree with %" PRIuS " nodes", tree.size());
@@ -204,6 +211,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     int64_t offset = tree[0].predictor_offset;
     int32_t multiplier = tree[0].multiplier;
     size_t ctx_id = tree[0].childID;
+    if (context_freqs) context_freqs->at(ctx_id)++;
     if (predictor == Predictor::Zero) {
       uint32_t value;
       if (reader->IsSingleValueAndAdvance(ctx_id, &value,
@@ -365,6 +373,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         PredictionResult res =
             PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
                             tree_lookup, references);
+        if (context_freqs) context_freqs->at(res.context)++;
         uint64_t v = READ_WITH_ENTROPY(res.context, br);
         p[x] = make_pixel(v, res.multiplier, res.guess);
       }
@@ -385,6 +394,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         PredictionResult res =
             PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
                           tree_lookup, references, &wp_state);
+        if (context_freqs) context_freqs->at(res.context)++;
         uint64_t v = READ_WITH_ENTROPY(res.context, br);
         p[x] = make_pixel(v, res.multiplier, res.guess);
         wp_state.UpdateErrors(p[x], x, y, channel.w);
@@ -425,7 +435,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                      const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map,
                      bool allow_truncated_group, const DecodingRect *rect,
-                     const jxl::MultiOptions &multi_options) {
+                     const jxl::MultiOptions &multi_options,
+                     std::vector<size_t> *context_freqs) {
   if (image.channel.empty()) return true;
 
   // decode transforms
@@ -516,7 +527,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
         br, &reader, *context_map, *tree, header.wp_header, i, group_id, &image,
-        rect, multi_options));
+        rect, multi_options, context_freqs));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
@@ -548,7 +559,8 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
   if (header == nullptr) header = &local_header;
   auto dec_status =
       ModularDecode(br, image, *header, group_id, options, tree, code, ctx_map,
-                    allow_truncated_group, rect, {});
+                    allow_truncated_group, rect, /*multi_options=*/{},
+                    /*context_freqs=*/nullptr);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   if (undo_transforms) image.undo_transforms(header->wp_header);
@@ -585,10 +597,12 @@ Status ModularDecodeMulti(BitReader *br, Image &image, size_t group_id,
                           const ANSCode *global_code,
                           const std::vector<uint8_t> *global_ctx_map,
                           const DecodingRect *rect,
-                          const MultiOptions &multi_options) {
+                          const MultiOptions &multi_options,
+                          std::vector<size_t> *context_freqs) {
   GroupHeader local_header;
   return ModularDecode(br, image, local_header, group_id, options, global_tree,
-                       global_code, global_ctx_map, false, rect, multi_options);
+                       global_code, global_ctx_map, false, rect, multi_options,
+                       context_freqs);
 }
 
 }  // namespace research
